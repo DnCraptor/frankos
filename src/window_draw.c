@@ -11,6 +11,7 @@
 #include "gfx.h"
 #include "display.h"
 #include "font.h"
+#include <string.h>
 
 /*==========================================================================
  * Drawing context — tracks current window's clip rect and origin
@@ -201,4 +202,55 @@ void wd_icon_32(int16_t x, int16_t y, const uint8_t *icon_data) {
     if (!draw_ctx.active || !icon_data) return;
     gfx_draw_icon_32_clipped(draw_ctx.ox + x, draw_ctx.oy + y, icon_data,
                               draw_ctx.ox, draw_ctx.oy, draw_ctx.cw, draw_ctx.ch);
+}
+
+void wd_button(int16_t x, int16_t y, int16_t w, int16_t h,
+               const char *label, bool focused, bool pressed) {
+    if (!draw_ctx.active) return;
+
+    /* Button face */
+    wd_fill_rect(x, y, w, h, THEME_BUTTON_FACE);
+
+    if (pressed) {
+        /* Sunken bevel */
+        wd_hline(x, y, w, COLOR_DARK_GRAY);
+        wd_vline(x, y, h, COLOR_DARK_GRAY);
+        wd_hline(x + 1, y + 1, w - 2, COLOR_BLACK);
+        wd_vline(x + 1, y + 1, h - 2, COLOR_BLACK);
+        wd_hline(x, y + h - 1, w, COLOR_WHITE);
+        wd_vline(x + w - 1, y, h, COLOR_WHITE);
+        wd_hline(x + 1, y + h - 2, w - 2, COLOR_LIGHT_GRAY);
+        wd_vline(x + w - 2, y + 1, h - 2, COLOR_LIGHT_GRAY);
+    } else {
+        /* Raised bevel */
+        wd_hline(x, y, w, COLOR_WHITE);
+        wd_vline(x, y, h, COLOR_WHITE);
+        wd_hline(x, y + h - 1, w, COLOR_BLACK);
+        wd_vline(x + w - 1, y, h, COLOR_BLACK);
+        wd_hline(x + 1, y + h - 2, w - 2, COLOR_DARK_GRAY);
+        wd_vline(x + w - 2, y + 1, h - 2, COLOR_DARK_GRAY);
+    }
+
+    /* Center label — offset +1px when pressed */
+    int off = pressed ? 1 : 0;
+    int text_w = (int)strlen(label) * FONT_UI_WIDTH;
+    int tx = x + (w - text_w) / 2 + off;
+    int ty = y + (h - FONT_UI_HEIGHT) / 2 + off;
+    wd_text_ui(tx, ty, label, COLOR_BLACK, THEME_BUTTON_FACE);
+
+    /* Focus indicator: dotted rectangle 3px inside button */
+    if (focused) {
+        int fx = x + 4 + off;
+        int fy = y + 4 + off;
+        int fw = w - 8;
+        int fh = h - 8;
+        for (int i = fx; i < fx + fw; i += 2) {
+            wd_pixel(i, fy, COLOR_BLACK);
+            wd_pixel(i, fy + fh - 1, COLOR_BLACK);
+        }
+        for (int j = fy; j < fy + fh; j += 2) {
+            wd_pixel(fx, j, COLOR_BLACK);
+            wd_pixel(fx + fw - 1, j, COLOR_BLACK);
+        }
+    }
 }

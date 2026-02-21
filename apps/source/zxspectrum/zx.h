@@ -144,6 +144,8 @@ typedef struct {
     uint64_t pins;
     uint64_t freq_hz;
     bool valid;
+    void (*tape_trap)(void *ud);   // ROM trap callback (NULL = disabled)
+    void *tape_trap_ud;            // user data for callback
     uint8_t ram[3][0x4000];
     uint8_t rom[1][0x4000];
 } zx_t;
@@ -344,6 +346,15 @@ uint32_t zx_exec(zx_t* sys, uint32_t micro_seconds) {
     // the old sprites too early.
     for (uint32_t tick = 0; tick < num_ticks || sys->scanline_y != last_bitmap_scanline; tick++) {
         pins = _zx_tick(sys, pins);
+
+        // Tape ROM trap: intercept M1 fetch at LD-BYTES (0x0556)
+        if (sys->tape_trap &&
+            (pins & (Z80_M1|Z80_MREQ|Z80_RD)) == (Z80_M1|Z80_MREQ|Z80_RD) &&
+            Z80_GET_ADDR(pins) == 0x0556) {
+            sys->pins = pins;
+            sys->tape_trap(sys->tape_trap_ud);
+            pins = sys->pins;  // handler may have changed CPU state
+        }
 
         // Audio buffer handling.
         if (SPEAKER_PIN != -1 && !(tick & 0xf)) {

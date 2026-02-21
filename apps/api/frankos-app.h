@@ -205,6 +205,14 @@ typedef struct {
 #define DLG_BTN_YES         (1u << 2)
 #define DLG_BTN_NO          (1u << 3)
 
+/* Dialog result IDs (posted as WM_COMMAND to parent) */
+#define DLG_RESULT_OK       0xFF01
+#define DLG_RESULT_CANCEL   0xFF02
+#define DLG_RESULT_YES      0xFF03
+#define DLG_RESULT_NO       0xFF04
+#define DLG_RESULT_INPUT    0xFF10
+#define DLG_RESULT_FILE     0xFF20
+
 /* ========================================================================
  * Theme constants
  * ======================================================================== */
@@ -471,6 +479,32 @@ static inline uint32_t ulTaskNotifyTake(int32_t xClearCountOnExit,
                                           uint32_t xTicksToWait) {
     typedef uint32_t (*fn_t)(uint32_t, int32_t, uint32_t);
     return ((fn_t)_sys_table_ptrs[431])(0, xClearCountOnExit, xTicksToWait);
+}
+
+/* ========================================================================
+ * File dialog API (indices 439–440)
+ * ======================================================================== */
+
+/* 439: file_dialog_open */
+static inline hwnd_t file_dialog_open(hwnd_t parent, const char *title,
+                                       const char *initial_path,
+                                       const char *filter_ext) {
+    typedef hwnd_t (*fn_t)(hwnd_t, const char*, const char*, const char*);
+    return ((fn_t)_sys_table_ptrs[439])(parent, title, initial_path, filter_ext);
+}
+
+/* 440: file_dialog_get_path */
+static inline const char *file_dialog_get_path(void) {
+    typedef const char *(*fn_t)(void);
+    return ((fn_t)_sys_table_ptrs[440])();
+}
+
+/* 441: wd_button — standard Win95-style push button */
+static inline void wd_button(int16_t x, int16_t y, int16_t w, int16_t h,
+                              const char *label, bool focused, bool pressed) {
+    typedef void (*fn_t)(int16_t, int16_t, int16_t, int16_t,
+                         const char*, bool, bool);
+    ((fn_t)_sys_table_ptrs[441])(x, y, w, h, label, focused, pressed);
 }
 
 #ifdef __cplusplus

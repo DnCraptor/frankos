@@ -22,6 +22,7 @@
 #include "window_draw.h"
 #include "menu.h"
 #include "dialog.h"
+#include "file_dialog.h"
 #include "taskbar.h"
 #include "filemanager.h"
 #include "ff.h"
@@ -587,6 +588,9 @@ unsigned long __in_systable() __aligned(4096) sys_table_ptrs[] = {
     dialog_input_show, // 436
     dialog_input_get_text, // 437
     printf, // 438 — USB serial debug output (Pico SDK stdio)
+    file_dialog_open, // 439
+    file_dialog_get_path, // 440
+    wd_button, // 441
     // TODO:
     0
 };

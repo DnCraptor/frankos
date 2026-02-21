@@ -87,4 +87,11 @@ void wd_icon_16(int16_t x, int16_t y, const uint8_t *icon_data);
 /* 32x32 icon (auto-clipped to client area) */
 void wd_icon_32(int16_t x, int16_t y, const uint8_t *icon_data);
 
+/* Standard Win95-style push button (auto-clipped to client area).
+ * label   - button text (centered)
+ * focused - if true, draws dotted focus rectangle
+ * pressed - if true, draws sunken bevel instead of raised */
+void wd_button(int16_t x, int16_t y, int16_t w, int16_t h,
+               const char *label, bool focused, bool pressed);
+
 #endif /* WINDOW_DRAW_H */
