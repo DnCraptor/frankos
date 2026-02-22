@@ -9,6 +9,10 @@
 #include "m-os-api.h"
 #include "frankos-app.h"
 
+/* UART debug printf — sys_table[438] is the OS's printf (UART-backed).
+ * The app's own printf goes to a pico SDK no-op (UART stdio disabled). */
+#define dbg_printf(...) ((int(*)(const char*, ...))_sys_table_ptrs[438])(__VA_ARGS__)
+
 /* m-os-api.h ships a broken rand() that always returns 1.
  * Use a proper xorshift32 PRNG with different names. */
 static uint32_t _prng_state;
@@ -127,6 +131,7 @@ typedef struct {
 
 /* Task handle for blocking main() until window closes */
 static void *app_task;
+static volatile bool app_closing;
 
 /*==========================================================================
  * Layout helpers
@@ -858,16 +863,17 @@ static bool ms_event(hwnd_t hwnd, const window_event_t *ev) {
     }
 
     if (ev->type == WM_CLOSE) {
+        dbg_printf("[minesweeper] WM_CLOSE received!\n");
         if (ms->timer_handle) {
-            xTimerStop(ms->timer_handle, 0);
-            xTimerDelete(ms->timer_handle, 0);
+            xTimerStop(ms->timer_handle, portMAX_DELAY);
+            xTimerDelete(ms->timer_handle, portMAX_DELAY);
             ms->timer_handle = (TimerHandle_t)0;
         }
         win->user_data = (void*)0;
-        /* Wake main() — it will do the heavyweight cleanup.
-         * We must NOT call wm_destroy_window/free here because
-         * main() returning causes the ELF loader to free our code,
-         * and we'd still be executing from it. */
+        /* Signal main() to exit.  Set the flag BEFORE the notification
+         * so that main()'s while-loop sees it on wakeup.  This makes
+         * the app resilient to spurious task notifications. */
+        app_closing = true;
         xTaskNotifyGive(app_task);
         return true;
     }
@@ -981,6 +987,7 @@ int main(int argc, char **argv) {
     (void)argv;
 
     app_task = xTaskGetCurrentTaskHandle();
+    app_closing = false;
 
     hwnd_t hwnd = minesweeper_create();
     if (hwnd == HWND_NULL)
@@ -989,14 +996,22 @@ int main(int argc, char **argv) {
     wm_set_focus(hwnd);
     taskbar_invalidate();
 
-    /* Block until the window is closed */
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    /* Block until the window is closed.  Loop to ignore spurious task
+     * notifications — only break when WM_CLOSE has set app_closing. */
+    dbg_printf("[minesweeper] entering wait loop, app_closing=%d, &app_closing=%p\n",
+               (int)app_closing, (void *)&app_closing);
+    while (!app_closing) {
+        uint32_t nv = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        dbg_printf("[minesweeper] notifyTake returned %u, app_closing=%d\n",
+                   (unsigned)nv, (int)app_closing);
+    }
+    dbg_printf("[minesweeper] exited wait loop\n");
 
-    /* Cleanup — safe here because our code is still alive until main returns */
-    window_t *win = wm_get_window(hwnd);
-    void *ms = win ? win->user_data : (void*)0;
+    /* Cleanup — safe here because our code is still alive until main returns.
+     * Note: WM_CLOSE already NULLed user_data and deleted the timer.
+     * The minesweeper_t allocation is tracked in pallocs and freed
+     * automatically by the ELF loader context cleanup. */
     wm_destroy_window(hwnd);
-    if (ms) free(ms);
     taskbar_invalidate();
 
     return 0;
