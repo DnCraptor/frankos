@@ -56,17 +56,12 @@ typedef struct {
     void *app_task;                 /* FreeRTOS task handle */
     int32_t app_hwnd;               /* Window handle (hwnd_t) */
     volatile bool closing;          /* Close requested */
-    volatile uint32_t paint_total_ms;
-    volatile uint32_t paint_count;
     bool tap_loaded;                /* TAP file loaded */
     uint8_t prev_modifiers;         /* Previous keyboard modifiers */
     FIL *tap_file;                  /* FatFS file handle (heap-allocated) */
     volatile bool reset_requested;  /* Deferred reset from WM task */
     volatile bool tap_path_ready;   /* Deferred TAP load from WM task */
     char tap_path[256];             /* Path for deferred TAP load */
-    uint32_t wr_total;              /* DEBUG: total WrZ80 calls */
-    uint32_t wr_vram;               /* DEBUG: VRAM-area WrZ80 calls */
-    volatile uint32_t key_count;    /* DEBUG: key events received */
 } app_globals_t;
 
 /* Register r9 holds the app_globals_t pointer.  Compiled with -ffixed-r9
@@ -119,9 +114,7 @@ void WrZ80(word Addr, byte Value) {
     uint16_t ra = Addr - 0x4000;
     uint8_t *bank = G->ram[ra >> 14];
     uint16_t off = ra & 0x3FFF;
-    G->wr_total++;
     if (ra < 0x1B00) {
-        G->wr_vram++;
         if (bank[off] != Value)
             G->vram_dirty = true;
     }
@@ -221,7 +214,6 @@ static void zx_paint(hwnd_t hwnd) {
     app_globals_t *g = (app_globals_t *)win->user_data;
     zx_t *sys = (zx_t *)g->zx;
 
-    uint32_t pt0 = xTaskGetTickCount();
     wd_begin(hwnd);
 
     uint8_t border = zx_to_cga[sys->border_color & 7];
@@ -269,8 +261,6 @@ static void zx_paint(hwnd_t hwnd) {
         }
     }
     wd_end();
-    g->paint_total_ms += xTaskGetTickCount() - pt0;
-    g->paint_count++;
 }
 
 /* ======================================================================
@@ -344,7 +334,6 @@ static bool zx_event(hwnd_t hwnd, const window_event_t *ev) {
     }
 
     if (ev->type == WM_KEYDOWN || ev->type == WM_KEYUP) {
-        g->key_count++;
         int zx_key = hid_to_zx(ev->key.scancode);
         if (zx_key >= 0) {
             if (ev->type == WM_KEYDOWN) zx_key_down(sys, zx_key);
@@ -379,8 +368,7 @@ int main(int argc, char **argv) {
     memset(globals, 0, sizeof(app_globals_t));
     G = globals;
 
-    serial_printf("ZX: G=%p sizeof=%u\n",
-                  (void *)G, (unsigned)sizeof(app_globals_t));
+    serial_printf("ZX: starting\n");
 
     G->app_task = xTaskGetCurrentTaskHandle();
 
@@ -403,8 +391,6 @@ int main(int argc, char **argv) {
     zx->ram[1] = ram_block + 0x4000;
     zx->ram[2] = ram_block + 0x8000;
 
-    serial_printf("ZX: FIL=%p zx=%p ram=%p (48K block)\n",
-                  (void *)tap_fil, (void *)zx, (void *)ram_block);
 
     /* Initialise ZX Spectrum 48K emulator */
     zx_desc_t desc;
@@ -441,19 +427,10 @@ int main(int argc, char **argv) {
     wm_set_focus(G->app_hwnd);
     taskbar_invalidate();
 
-    serial_printf("ZX: running, sizeof(zx_t)=%u sizeof(Z80)=%u\n",
-                  (unsigned)sizeof(zx_t), (unsigned)sizeof(Z80));
-    serial_printf("ZX: rom=%p rom[0..3]=%02X %02X %02X %02X\n",
-                  (void *)G->rom, G->rom[0], G->rom[1], G->rom[2], G->rom[3]);
-    serial_printf("ZX: PC=%04X IFF=%02X SP=%04X\n",
-                  zx_cpu.PC.W, zx_cpu.IFF, zx_cpu.SP.W);
+    serial_printf("ZX: running\n");
 
     /* Main emulation loop.
      * zx_exec() takes MICROSECONDS — 20000 µs = 20 ms = 1 ZX frame. */
-    uint32_t frame = 0;
-    uint32_t t0 = xTaskGetTickCount();
-    uint32_t emu_total_ms = 0;
-
     while (!G->closing) {
         /* Handle deferred actions from WM task */
         if (G->reset_requested) {
@@ -476,58 +453,17 @@ int main(int argc, char **argv) {
         if (G->tap_path_ready) {
             G->tap_path_ready = false;
             load_tap_file(G->tap_path);
-            /* Verify window struct integrity after TAP load */
-            window_t *chk_win = wm_get_window(G->app_hwnd);
-            if (chk_win) {
-                serial_printf("ZX: post-TAP win=%p ud=%p (expect %p) ev=%p paint=%p\n",
-                              (void *)chk_win,
-                              chk_win->user_data, (void *)G,
-                              (void *)chk_win->event_handler,
-                              (void *)chk_win->paint_handler);
-            }
         }
 
-        uint32_t et0 = xTaskGetTickCount();
         for (int burst = 0; burst < 8 && !G->closing; burst++) {
             zx_exec(zx, 2500);
         }
-        emu_total_ms += xTaskGetTickCount() - et0;
 
-        ++frame;
-        if (G->vram_dirty) {
-            G->vram_dirty = false;
-            wm_invalidate(G->app_hwnd);
-        }
+        /* Always invalidate — needed for FLASH attribute blinking
+         * even when VRAM content hasn't changed */
+        G->vram_dirty = false;
+        wm_invalidate(G->app_hwnd);
         vTaskDelay(pdMS_TO_TICKS(1));
-
-        if (frame % 50 == 0) {
-            uint32_t elapsed = xTaskGetTickCount() - t0;
-            uint32_t p_ms = G->paint_total_ms;
-            uint32_t p_cnt = G->paint_count;
-            G->paint_total_ms = 0;
-            G->paint_count = 0;
-            uint32_t e_ms = emu_total_ms;
-            emu_total_ms = 0;
-            t0 = xTaskGetTickCount();
-            serial_printf("ZX: 50fr %ums (%u fps) emu=%ums paint=%ums/%u keys=%u stk=%u\n",
-                          (unsigned)elapsed,
-                          (unsigned)(elapsed ? 50000 / elapsed : 0),
-                          (unsigned)e_ms,
-                          (unsigned)p_ms, (unsigned)p_cnt,
-                          (unsigned)G->key_count,
-                          (unsigned)((uint32_t(*)(void*))_sys_table_ptrs[22])(NULL));
-            if (frame <= 100) {
-                serial_printf("  PC=%04X SP=%04X IFF=%02X AF=%04X wr=%u vram_wr=%u\n",
-                              zx_cpu.PC.W, zx_cpu.SP.W,
-                              zx_cpu.IFF, zx_cpu.AF.W,
-                              (unsigned)G->wr_total, (unsigned)G->wr_vram);
-                serial_printf("  vram[0..3]=%02X %02X %02X %02X attr[0..3]=%02X %02X %02X %02X\n",
-                              G->ram[0][0], G->ram[0][1],
-                              G->ram[0][2], G->ram[0][3],
-                              G->ram[0][0x1800], G->ram[0][0x1801],
-                              G->ram[0][0x1802], G->ram[0][0x1803]);
-            }
-        }
     }
 
     wm_destroy_window(G->app_hwnd);
@@ -552,6 +488,7 @@ static void setup_menu(hwnd_t hwnd) {
 
     menu_def_t *file = &bar.menus[0];
     strncpy(file->title, "File", sizeof(file->title) - 1);
+    file->accel_key = 0x09; /* HID 'F' — underlines F, enables Alt+F */
     file->item_count = 4;
 
     strncpy(file->items[0].text, "Load TAP...", 19);
@@ -604,26 +541,7 @@ static void load_tap_file(const char *path) {
         ZX->tape_trap = NULL;
     }
 
-    /* Save critical pointers for corruption detection */
-    void *chk_zx   = (void *)G->zx;
-    void *chk_ram0  = (void *)G->ram[0];
-    void *chk_task  = G->app_task;
-    int32_t chk_hwnd = G->app_hwnd;
-
-    serial_printf("ZX: f_open FIL=%p path=%s\n", (void *)G->tap_file, path);
-
     FRESULT fr = f_open(G->tap_file, path, FA_READ);
-
-    /* Check for memory corruption after f_open */
-    if ((void *)G->zx != chk_zx || (void *)G->ram[0] != chk_ram0 ||
-        G->app_task != chk_task || G->app_hwnd != chk_hwnd) {
-        serial_printf("ZX: *** CORRUPTION after f_open! ***\n");
-        serial_printf("  zx:   %p -> %p\n", chk_zx, (void *)G->zx);
-        serial_printf("  ram0: %p -> %p\n", chk_ram0, (void *)G->ram[0]);
-        serial_printf("  task: %p -> %p\n", chk_task, G->app_task);
-        serial_printf("  hwnd: %d -> %d\n", (int)chk_hwnd, (int)G->app_hwnd);
-    }
-
     if (fr != FR_OK) {
         serial_printf("ZX: TAP open failed: %s (err %d)\n", path, fr);
         return;
@@ -632,14 +550,11 @@ static void load_tap_file(const char *path) {
     G->tap_loaded = true;
     ZX->tape_trap = handle_tape_trap;
     ZX->tape_trap_ud = ZX;
-    serial_printf("ZX: TAP loaded: %s (trap armed)\n", path);
+    serial_printf("ZX: TAP loaded: %s\n", path);
 }
 
 static void handle_tape_trap(void *ud) {
     zx_t *sys = (zx_t *)ud;
-
-    serial_printf("ZX: TRAP PC=%04X AF=%04X IX=%04X DE=%04X\n",
-                  zx_cpu.PC.W, zx_cpu.AF.W, zx_cpu.IX.W, zx_cpu.DE.W);
 
     /* Read Z80 registers set by ROM before calling LD-BYTES:
      *   A  = expected flag byte (0x00 header, 0xFF data)
@@ -701,9 +616,6 @@ static void handle_tape_trap(void *ud) {
     uint16_t data_len = block_len - 2;
     uint16_t to_load = (expected_len < data_len) ? expected_len : data_len;
 
-    serial_printf("ZX: TAP block flag=%02X len=%u dest=%04X load=%u\n",
-                  flag, data_len, dest, to_load);
-
     /* Read and copy payload into Z80 RAM in 128-byte chunks */
     uint8_t xor_check = flag;
     uint8_t buf[128];
@@ -749,7 +661,6 @@ static void handle_tape_trap(void *ud) {
         zx_cpu.AF.B.l |= C_FLAG;
         zx_cpu.AF1.W |= 0x40;  /* bit 6 of F' — ROM internal flag */
     } else {
-        serial_printf("ZX: TAP checksum error (xor=%02X)\n", xor_check);
         zx_cpu.AF.B.l &= ~C_FLAG;
     }
 
