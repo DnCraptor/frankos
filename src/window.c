@@ -950,8 +950,10 @@ void wm_composite(void) {
             drag_overlay_stamp(&outline);
     }
 
-    /* Stamp cursor — skip if already stamped above or untouched */
-    if (cursor_mode != CUR_SKIP) {
+    /* Stamp cursor — skip if already stamped above, untouched,
+     * or hidden during boot (before first mouse move). */
+    extern volatile bool boot_cursor_hidden;
+    if (cursor_mode != CUR_SKIP && !boot_cursor_hidden) {
         int16_t mx, my;
         wm_get_cursor_pos(&mx, &my);
         cursor_overlay_stamp(mx, my);

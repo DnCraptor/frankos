@@ -71,6 +71,11 @@ void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
 /* Dirty flag — set by input_task, read by compositor_task (both on Core 0) */
 static volatile bool g_video_dirty = true;
 
+/* Boot cursor state: cursor is hidden after the hourglass timeout until
+ * the user first moves the mouse.  Non-static so wm_composite can skip
+ * stamping the cursor while hidden. */
+volatile bool boot_cursor_hidden = false;
+
 static inline void led_init(void) {
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
@@ -243,18 +248,20 @@ static void heartbeat_task(void *params) {
 static void compositor_task(void *params) {
     (void)params;
 
-    /* Clear startup hourglass and show taskbar after 500ms */
-    TickType_t boot_deadline = xTaskGetTickCount() + pdMS_TO_TICKS(500);
+    /* Show hourglass for 1 second, then hide cursor until first mouse move */
+    TickType_t boot_deadline = xTaskGetTickCount() + pdMS_TO_TICKS(1000);
     bool boot_cursor_active = true;
 
     for (;;) {
-        /* End boot sequence: show taskbar and restore arrow cursor */
+        /* End boot sequence: show taskbar and hide cursor */
         if (boot_cursor_active && xTaskGetTickCount() >= boot_deadline) {
             boot_cursor_active = false;
             swap_init();
             startmenu_init();
             taskbar_init();
             cursor_set_type(CURSOR_ARROW);
+            cursor_overlay_erase();
+            boot_cursor_hidden = true;
             wm_mark_dirty();
         }
 
@@ -471,6 +478,11 @@ static void input_task(void *params) {
         int8_t wheel;
         uint8_t buttons;
         if (ps2_mouse_get_state(&dx, &dy, &wheel, &buttons)) {
+            /* First mouse movement after boot: show the arrow cursor */
+            if (boot_cursor_hidden) {
+                boot_cursor_hidden = false;
+            }
+
             /* Convert deltas to absolute — PS/2 Y is inverted */
             cur_x += dx;
             cur_y -= dy;
@@ -507,7 +519,8 @@ static void input_task(void *params) {
                 g_video_dirty = true;
             } else {
                 /* Move only — cheap show-buffer cursor update */
-                cursor_overlay_move(cur_x, cur_y);
+                if (!boot_cursor_hidden)
+                    cursor_overlay_move(cur_x, cur_y);
             }
         }
 
