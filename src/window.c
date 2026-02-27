@@ -41,11 +41,9 @@ static hwnd_t    focus_hwnd;                    /* currently focused window */
  * the beam would otherwise catch on the single visible buffer. */
 static bool needs_full_repaint = true;
 
-/* Cascade counter for new window positioning */
-static uint8_t cascade_counter = 0;
+/* Cascade positioning for new windows */
 #define CASCADE_STEP_X  20
 #define CASCADE_STEP_Y  20
-#define CASCADE_MAX      8  /* wrap after 8 steps */
 
 /* Expose rect queue — desktop areas revealed by structural changes */
 #define EXPOSE_MAX 8
@@ -148,18 +146,52 @@ hwnd_t wm_create_window(int16_t x, int16_t y, int16_t w, int16_t h,
                 win->icon = NULL;
             }
 
-            /* Cascade bordered windows so they don't stack on top of each other */
+            /* Smart cascade: find a position where no existing window's
+             * top-left corner is nearby.  Try slots starting from 0,
+             * pick the first unoccupied one.  This naturally wraps back
+             * to the top-left after windows are closed. */
             if (style & WF_BORDER) {
-                int16_t offset = (cascade_counter % CASCADE_MAX) * CASCADE_STEP_X;
-                win->frame.x += offset;
-                win->frame.y += offset;
-                /* Clamp to keep on screen */
+                int16_t base_x = win->frame.x;
+                int16_t base_y = win->frame.y;
+                int16_t work_h = taskbar_work_area_height();
                 int16_t max_x = DISPLAY_WIDTH - win->frame.w;
-                int16_t max_y = taskbar_work_area_height() - win->frame.h;
-                if (win->frame.x > max_x) win->frame.x = max_x > 0 ? max_x : 0;
-                if (win->frame.y > max_y) win->frame.y = max_y > 0 ? max_y : 0;
+                int16_t max_y = work_h - win->frame.h;
+                if (max_x < 0) max_x = 0;
+                if (max_y < 0) max_y = 0;
+
+                /* How many cascade slots fit on screen? */
+                int slots_x = max_x / CASCADE_STEP_X + 1;
+                int slots_y = max_y / CASCADE_STEP_Y + 1;
+                int max_slots = slots_x < slots_y ? slots_x : slots_y;
+                if (max_slots < 1) max_slots = 1;
+                if (max_slots > 16) max_slots = 16;
+
+                int best = 0;
+                for (int slot = 0; slot < max_slots; slot++) {
+                    int16_t cx = base_x + slot * CASCADE_STEP_X;
+                    int16_t cy = base_y + slot * CASCADE_STEP_Y;
+                    bool occupied = false;
+                    for (uint8_t k = 0; k < z_count; k++) {
+                        window_t *other = &windows[z_stack[k] - 1];
+                        if (!(other->flags & WF_VISIBLE)) continue;
+                        int16_t dx = other->frame.x - cx;
+                        int16_t dy = other->frame.y - cy;
+                        if (dx < 0) dx = -dx;
+                        if (dy < 0) dy = -dy;
+                        if (dx < CASCADE_STEP_X && dy < CASCADE_STEP_Y) {
+                            occupied = true;
+                            break;
+                        }
+                    }
+                    if (!occupied) { best = slot; break; }
+                    best = slot;  /* fallback: use last slot tried */
+                }
+
+                win->frame.x = base_x + best * CASCADE_STEP_X;
+                win->frame.y = base_y + best * CASCADE_STEP_Y;
+                if (win->frame.x > max_x) win->frame.x = max_x;
+                if (win->frame.y > max_y) win->frame.y = max_y;
                 win->restore_rect = win->frame;
-                cascade_counter++;
             }
 
             hwnd_t hwnd = (hwnd_t)(i + 1);
