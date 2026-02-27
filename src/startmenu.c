@@ -630,7 +630,9 @@ bool startmenu_mouse(uint8_t type, int16_t x, int16_t y) {
             }
             if (new_hover != sm_hover) {
                 sm_hover = new_hover;
-                /* Close both submenus, then open the relevant one */
+                /* Close both submenus, then open the relevant one.
+                 * Use full repaint to clear stale submenu pixels. */
+                bool had_sub = sub_open || fw_open;
                 sub_open = false;
                 sub_hover = -1;
                 fw_open = false;
@@ -642,7 +644,10 @@ bool startmenu_mouse(uint8_t type, int16_t x, int16_t y) {
                     fw_open = true;
                     compute_fw_rect();
                 }
-                wm_mark_dirty();
+                if (had_sub)
+                    wm_force_full_repaint();
+                else
+                    wm_mark_dirty();
             }
         }
         if (type == WM_LBUTTONUP && sm_hover >= 0) {
@@ -692,7 +697,7 @@ bool startmenu_handle_key(uint8_t hid_code, uint8_t modifiers) {
         case 0x50: /* LEFT — close submenu */
             fw_open = false;
             fw_hover = -1;
-            wm_mark_dirty();
+            wm_force_full_repaint();
             return true;
         case 0x28: /* ENTER */
             if (fw_hover >= 0) execute_fw_item(fw_hover);
@@ -700,7 +705,7 @@ bool startmenu_handle_key(uint8_t hid_code, uint8_t modifiers) {
         case 0x29: /* ESC */
             fw_open = false;
             fw_hover = -1;
-            wm_mark_dirty();
+            wm_force_full_repaint();
             return true;
         }
         return true;
@@ -723,7 +728,7 @@ bool startmenu_handle_key(uint8_t hid_code, uint8_t modifiers) {
         case 0x50: /* LEFT — close submenu */
             sub_open = false;
             sub_hover = -1;
-            wm_mark_dirty();
+            wm_force_full_repaint();
             return true;
         case 0x28: /* ENTER */
             if (sub_hover >= 0) execute_sub_item(sub_hover);
@@ -731,7 +736,7 @@ bool startmenu_handle_key(uint8_t hid_code, uint8_t modifiers) {
         case 0x29: /* ESC */
             sub_open = false;
             sub_hover = -1;
-            wm_mark_dirty();
+            wm_force_full_repaint();
             return true;
         }
         return true;
@@ -742,16 +747,18 @@ bool startmenu_handle_key(uint8_t hid_code, uint8_t modifiers) {
     case 0x52: /* UP */
         sm_hover--;
         if (sm_hover < 0) sm_hover = SM_ITEM_COUNT - 1;
+        if (sub_open || fw_open) wm_force_full_repaint();
+        else wm_mark_dirty();
         sub_open = false;
         fw_open = false;
-        wm_mark_dirty();
         return true;
     case 0x51: /* DOWN */
         sm_hover++;
         if (sm_hover >= (int)SM_ITEM_COUNT) sm_hover = 0;
+        if (sub_open || fw_open) wm_force_full_repaint();
+        else wm_mark_dirty();
         sub_open = false;
         fw_open = false;
-        wm_mark_dirty();
         return true;
     case 0x4F: /* RIGHT — open submenu if applicable */
         if (sm_hover >= 0 && sm_items[sm_hover].has_submenu) {
