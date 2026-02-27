@@ -78,7 +78,7 @@ typedef enum {
     LOAD,
     EXECUTED,
     INVALIDATED,
-    SIGTERM,
+    SIGTERM_ST,
     ZOMBIE
 } cmd_exec_stage_t;
 
@@ -107,7 +107,7 @@ typedef struct cmd_ctx {
 
     volatile cmd_exec_stage_t stage;
     void* user_data;
-    bool forse_flash;
+    bool force_flash;
     TaskHandle_t task;
     TaskHandle_t parent_task; // TODO: optimise (ppid only?)
     long pid;
@@ -129,6 +129,7 @@ typedef struct cmd_ctx {
     int proc_errno;
     terminal_t *term;   /* owning terminal for this process */
     void* task_mem;     /* PSRAM block for static task (stack + TCB), freed on exit */
+    unsigned int umask; /* per-process file creation mask (default 022) */
 } cmd_ctx_t;
 
 cmd_ctx_t* get_cmd_startup_ctx(); // system

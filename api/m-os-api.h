@@ -288,7 +288,7 @@ typedef enum {
     LOAD,
     EXECUTED,
     INVALIDATED,
-    SIGTERM
+    SIGTERM_ST
 } cmd_exec_stage_t;
 
 typedef struct cmd_ctx {
@@ -312,7 +312,7 @@ typedef struct cmd_ctx {
 
     volatile cmd_exec_stage_t stage;
     void* user_data;
-    bool forse_flash;
+    bool force_flash;
     TaskHandle_t parent_task;
 } cmd_ctx_t;
 

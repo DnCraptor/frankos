@@ -15,6 +15,7 @@ static void* allocator(void) {
 void* __new_ctx(void) {
     cmd_ctx_t* res = (cmd_ctx_t*)pvPortCalloc(1, sizeof(cmd_ctx_t));
     res->pallocs = new_list_v(allocator, (dealloc_fn_ptr_t)psram_free, 0);
+    res->umask = 022;
     return res;
 }
 
@@ -149,6 +150,7 @@ void __free(void* p) {
 
 char* __copy_str(const char* s) {
     char* res = (char*)__malloc(strlen(s) + 1);
+    if (!res) return NULL;
     strcpy(res, s);
     return res;
 }
