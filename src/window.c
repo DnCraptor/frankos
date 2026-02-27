@@ -787,12 +787,15 @@ void wm_composite(void) {
 
         /* Dirty propagation: if a dirty window (lower z) is painted,
          * it overwrites pixels that a higher clean window should cover.
-         * Mark the higher window dirty only if it actually overlaps a
-         * dirty window below it — NOT just the bounding box of all
-         * dirty windows, which can cause false cascades. */
+         * A higher window that is already WF_DIRTY (content-only, from
+         * wm_invalidate) still needs WF_FRAME_DIRTY so that its
+         * background is re-filled over the lower window's pixels.
+         * Skip only if the window already has both flags set. */
         for (uint8_t i = 1; i < z_count; i++) {
             window_t *w = &windows[z_stack[i] - 1];
-            if (!(w->flags & WF_VISIBLE) || (w->flags & WF_DIRTY)) continue;
+            if (!(w->flags & WF_VISIBLE)) continue;
+            if ((w->flags & (WF_DIRTY | WF_FRAME_DIRTY)) ==
+                             (WF_DIRTY | WF_FRAME_DIRTY)) continue;
 
             for (uint8_t j = 0; j < i; j++) {
                 window_t *d = &windows[z_stack[j] - 1];
@@ -878,7 +881,24 @@ void wm_composite(void) {
             hwnd_t hwnd = z_stack[i];
             window_t *win = &windows[hwnd - 1];
             if (!(win->flags & WF_VISIBLE)) continue;
-            if (!(win->flags & WF_DIRTY)) continue;
+
+            /* Late dirty propagation: a timer callback on another task
+             * may have marked a lower window dirty AFTER the propagation
+             * phase above.  Re-check here so higher overlapping windows
+             * are always repainted on top (with WF_FRAME_DIRTY to ensure
+             * background fill covers lower window pixels). */
+            if ((win->flags & (WF_DIRTY | WF_FRAME_DIRTY)) !=
+                               (WF_DIRTY | WF_FRAME_DIRTY)) {
+                for (uint8_t j = 0; j < i; j++) {
+                    window_t *d = &windows[z_stack[j] - 1];
+                    if ((d->flags & WF_VISIBLE) && (d->flags & WF_DIRTY) &&
+                        rect_overlaps(&win->frame, &d->frame)) {
+                        win->flags |= WF_DIRTY | WF_FRAME_DIRTY;
+                        break;
+                    }
+                }
+                if (!(win->flags & WF_DIRTY)) continue;
+            }
 
             /* Only repaint decorations (border, title bar, client bg)
              * when the frame actually changed.  Content-only updates
