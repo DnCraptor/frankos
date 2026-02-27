@@ -761,10 +761,18 @@ int main(void) {
     if (ps2_init(pio0, PS2_PIN_CLK, PS2_MOUSE_CLK)) {
         printf("PS/2 PIO initialized (kbd CLK=%d, mouse CLK=%d)\n",
                PS2_PIN_CLK, PS2_MOUSE_CLK);
-        if (ps2_mouse_init_device()) {
+        bool mouse_ok = false;
+        for (int attempt = 0; attempt < 5 && !mouse_ok; attempt++) {
+            if (attempt) {
+                printf("PS/2 mouse init retry %d...\n", attempt);
+                sleep_ms(100);
+            }
+            mouse_ok = ps2_mouse_init_device();
+        }
+        if (mouse_ok) {
             printf("PS/2 mouse initialized (wheel=%d)\n", ps2_mouse_has_wheel());
         } else {
-            printf("PS/2 mouse device init failed\n");
+            printf("PS/2 mouse device init failed after 5 attempts\n");
         }
     } else {
         printf("PS/2 PIO init failed\n");
