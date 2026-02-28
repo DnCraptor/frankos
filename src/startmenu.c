@@ -20,6 +20,7 @@
 #include "font.h"
 #include "display.h"
 #include "sdcard_init.h"
+#include "snd.h"
 #include "ff.h"
 #include "hardware/watchdog.h"
 #include <string.h>
@@ -212,7 +213,7 @@ static int16_t fw_x, fw_y, fw_w, fw_h;
 enum { PENDING_NONE, PENDING_REBOOT, PENDING_FIRMWARE };
 static uint8_t pending_action = PENDING_NONE;
 static int     pending_fw_index = -1;
-static char    pending_fw_text[128];
+static char    pending_fw_text[256];
 
 /*==========================================================================
  * Geometry
@@ -331,6 +332,9 @@ static void do_flash_firmware(int index) {
     cursor_set_type(CURSOR_WAIT);
     wm_composite();
 
+    /* Shut down the sound system to prevent noise/clicks during flash */
+    snd_deinit();
+
     /* Show "Flashing firmware..." notification */
     gfx_fill_rect(160, 200, 320, 80, THEME_BUTTON_FACE);
     gfx_rect(160, 200, 320, 80, COLOR_DARK_GRAY);
@@ -350,8 +354,11 @@ static void execute_fw_item(int index) {
     /* Build confirmation dialog text */
     snprintf(pending_fw_text, sizeof(pending_fw_text),
              "Launch \"%s\"?\n\n"
+             "Screen will turn off during\n"
+             "flashing. Please wait.\n\n"
              "To return to FRANK OS,\n"
-             "hold Space and press Reset.",
+             "hold Space and press Reset.\n"
+             "If it fails, re-flash FOS.",
              uf2_files[index].name);
 
     pending_action = PENDING_FIRMWARE;

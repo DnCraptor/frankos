@@ -28,3 +28,6 @@ void snd_write(int ch, const int16_t *samples, int frames);
 
 /* Close a channel, freeing it for reuse. */
 void snd_close(int ch);
+
+/* Shut down the entire sound system (stops I2S DMA + PIO). */
+void snd_deinit(void);

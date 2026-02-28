@@ -236,3 +236,12 @@ void snd_close(int ch) {
     channels[ch].wr     = 0;
     channels[ch].phase  = 0;
 }
+
+/*==========================================================================
+ * snd_deinit — shut down the entire sound system (I2S + DMA)
+ *==========================================================================*/
+void snd_deinit(void) {
+    for (int ch = 0; ch < SND_MAX_CHANNELS; ch++)
+        channels[ch].active = false;
+    i2s_deinit(&snd_i2s_config);
+}
