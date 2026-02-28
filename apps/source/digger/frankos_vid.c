@@ -58,6 +58,9 @@ static int16_t current_inten = 0;
  * Low nibble = left pixel (even x), high nibble = right pixel (odd x).
  * Row stride = 320/2 = 160 bytes.
  */
+/*
+ * FRANK OS nibble order: high nibble = left (even x), low nibble = right (odd x).
+ */
 static inline void fb_set_pixel(int x, int y, uint8_t color) {
     int fb_y = y + DIGGER_Y_OFFSET;
     if (fb_y < 0 || fb_y >= DIGGER_FB_H || x < 0 || x >= DIGGER_FB_W)
@@ -65,9 +68,9 @@ static inline void fb_set_pixel(int x, int y, uint8_t color) {
     uint8_t *fb = g_app->framebuffer;
     int idx = fb_y * DIGGER_FB_STRIDE + (x >> 1);
     if (x & 1)
-        fb[idx] = (fb[idx] & 0x0F) | ((color & 0x0F) << 4);
-    else
         fb[idx] = (fb[idx] & 0xF0) | (color & 0x0F);
+    else
+        fb[idx] = (fb[idx] & 0x0F) | ((color & 0x0F) << 4);
 }
 
 static inline uint8_t fb_get_pixel(int x, int y) {
@@ -77,9 +80,9 @@ static inline uint8_t fb_get_pixel(int x, int y) {
     uint8_t *fb = g_app->framebuffer;
     int idx = fb_y * DIGGER_FB_STRIDE + (x >> 1);
     if (x & 1)
-        return (fb[idx] >> 4) & 0x0F;
-    else
         return fb[idx] & 0x0F;
+    else
+        return (fb[idx] >> 4) & 0x0F;
 }
 
 /*
@@ -321,16 +324,9 @@ void digger_paint(hwnd_t hwnd) {
     const uint8_t *lut = g_app->cga_to_color;
 
     /*
-     * The internal FB and the FRANK OS window FB are both 4-bit nibble-packed.
-     * Internal FB uses CGA indices 0-3. FRANK OS FB uses CGA16 indices 0-15.
-     * Translate each nibble through the palette lookup table.
-     *
-     * Internal FB: low nibble = even pixel, high nibble = odd pixel.
-     * FRANK OS FB: same format (wd_fb_ptr returns pair-encoded bytes).
-     *
-     * We only copy the 320x200 game area (rows DIGGER_Y_OFFSET to
-     * DIGGER_Y_OFFSET + DIGGER_HEIGHT - 1), placing it at the top
-     * of the window client area.
+     * Both framebuffers use the same nibble order:
+     *   high nibble = left (even) pixel, low nibble = right (odd) pixel.
+     * Translate each nibble from CGA index (0-3) to FRANK OS COLOR_* (0-15).
      */
     for (int y = 0; y < DIGGER_HEIGHT; y++) {
         const uint8_t *srow = &src[(y + DIGGER_Y_OFFSET) * DIGGER_FB_STRIDE];
@@ -338,9 +334,9 @@ void digger_paint(hwnd_t hwnd) {
 
         for (int bx = 0; bx < DIGGER_FB_STRIDE; bx++) {
             uint8_t sb = srow[bx];
-            uint8_t lo = lut[sb & 0x0F];
-            uint8_t hi = lut[(sb >> 4) & 0x0F];
-            drow[bx] = (hi << 4) | lo;
+            uint8_t left  = lut[(sb >> 4) & 0x0F];
+            uint8_t right = lut[sb & 0x0F];
+            drow[bx] = (left << 4) | right;
         }
     }
 

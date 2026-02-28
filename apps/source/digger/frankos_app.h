@@ -30,8 +30,9 @@
 /* Key event FIFO size */
 #define DIGGER_KBLEN 30
 
-/* Audio samples per frame: 44100 Hz / 12.5 Hz = 3528 */
-#define DIGGER_AUDIO_SAMPLES_PER_FRAME 3528
+/* Audio: 22050 Hz sample rate, 22050 / 12.5 = 1764 samples per frame */
+#define DIGGER_AUDIO_SAMPLE_RATE       22050
+#define DIGGER_AUDIO_SAMPLES_PER_FRAME 1764
 
 /* Shared state between game loop (app task) and FRANK OS callbacks (WM task) */
 typedef struct {

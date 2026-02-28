@@ -67,7 +67,7 @@ static void inir_defaults(void) {
     setspkrt2 = s1setspkrt2;
     timer0 = s1timer0;
     timer2 = s1timer2;
-    soundinitglob(512, 44100);
+    soundinitglob(512, DIGGER_AUDIO_SAMPLE_RATE);
 }
 
 /*
@@ -169,7 +169,7 @@ int main(int argc, char **argv) {
 
     /* Initialize PCM audio */
     if (g_app->audio_buf) {
-        pcm_init(44100, 2);
+        pcm_init(DIGGER_AUDIO_SAMPLE_RATE, 2);
         g_app->audio_initialized = true;
     }
     /* Initialize game with defaults and run */
