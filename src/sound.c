@@ -11,9 +11,24 @@
 #include <pico/stdlib.h>
 #include "sound.h"
 #include "snd.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
-/* Channel used by the legacy pcm_init / pcm_write API */
-static int pcm_channel = -1;
+/*
+ * Channel used by the legacy pcm_init / pcm_write API.
+ *
+ * Stored in FreeRTOS TLS slot 1 (slot 0 = cmd_ctx_t) so each app task has
+ * its own independent handle.  This prevents one app (e.g. pshell) calling
+ * pcm_init() from clobbering another app's open channel (e.g. ZX Spectrum).
+ *
+ * Encoding: store (ch + 1) so that ch == -1 (not open) maps to 0 / NULL.
+ */
+static inline int get_pcm_channel(void) {
+    return (int)(uintptr_t)pvTaskGetThreadLocalStoragePointer(NULL, 1) - 1;
+}
+static inline void set_pcm_channel(int ch) {
+    vTaskSetThreadLocalStoragePointer(NULL, 1, (void *)(uintptr_t)(ch + 1));
+}
 
 void init_sound() {
     /* snd_init() is called separately from main.c */
@@ -29,9 +44,10 @@ void pcm_call() {
 }
 
 void pcm_cleanup(void) {
+    int pcm_channel = get_pcm_channel();
     if (pcm_channel >= 0) {
         snd_close(pcm_channel);
-        pcm_channel = -1;
+        set_pcm_channel(-1);
     }
 }
 
@@ -46,11 +62,13 @@ void pcm_set_buffer(int16_t* buff, uint8_t channels, size_t size, pcm_end_callba
 
 void pcm_init(int sample_rate, int channels) {
     (void)channels;
+    int pcm_channel = get_pcm_channel();
     if (pcm_channel >= 0) snd_close(pcm_channel);
-    pcm_channel = snd_open(sample_rate);
+    set_pcm_channel(snd_open(sample_rate));
 }
 
 void pcm_write(const int16_t *samples, int count) {
+    int pcm_channel = get_pcm_channel();
     if (pcm_channel >= 0)
         snd_write(pcm_channel, samples, count);
 }

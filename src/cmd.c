@@ -71,6 +71,10 @@ cmd_ctx_t* __in_hfa() clone_ctx(cmd_ctx_t* src) {
     res->ret_code = src->ret_code;
     res->user_data = 0;
     res->force_flash = src->force_flash;
+    // Initialize signal state (sig_handler[] already zeroed by pvPortCalloc = SIG_DFL)
+    res->sig_pending = 0;
+    res->sig_blocked = 0;
+    res->sig_default = src->sig_default;
     return res;
 }
 

@@ -168,7 +168,7 @@ target_compile_definitions(frankos PRIVATE
     MIN_API_VERSION=14
     RESERVED_RAM=512
     OS_FLASH_SIZE=256
-    OVERCLOCKING=504
+    OVERCLOCKING=378
     I2S_SOUND=1
 )
 

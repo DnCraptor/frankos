@@ -283,7 +283,10 @@ void deliver_signals(cmd_ctx_t *ctx)
                 __unreachable();
             }
 
-            h(sig);
+            /* Validate handler pointer before calling — guard against
+             * corrupted sig_handler table or stale context pointers. */
+            if ((uintptr_t)h >= 0x10000000 && (uintptr_t)h < 0x30000000)
+                h(sig);
         }
     }
 }

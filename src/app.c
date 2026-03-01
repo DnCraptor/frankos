@@ -1151,13 +1151,13 @@ a6:
 
     printf("[load_app] load req_ver...\n");
     bootb_ctx->req_ver_fn = load_sec2mem_wrapper(pctx, req_idx, try_to_use_flash);
-    printf("[load_app] load _init... heap=%u\n", (unsigned)xPortGetFreeHeapSize());
+    printf("[load_app] req_ver=%p bootb=%p\n", (void*)(uintptr_t)bootb_ctx->req_ver_fn, bootb_ctx);
     bootb_ctx->_init_fn   = load_sec2mem_wrapper(pctx, _init_idx, try_to_use_flash);
-    printf("[load_app] load main... heap=%u\n", (unsigned)xPortGetFreeHeapSize());
+    printf("[load_app] _init=%p\n", (void*)(uintptr_t)bootb_ctx->_init_fn);
     bootb_ctx->main_fn    = load_sec2mem_wrapper(pctx, main_idx, try_to_use_flash);
-    printf("[load_app] load _fini... heap=%u\n", (unsigned)xPortGetFreeHeapSize());
+    printf("[load_app] main=%p\n", (void*)(uintptr_t)bootb_ctx->main_fn);
     bootb_ctx->_fini_fn   = load_sec2mem_wrapper(pctx, _fini_idx, try_to_use_flash);
-    printf("[load_app] load sig... heap=%u\n", (unsigned)xPortGetFreeHeapSize());
+    printf("[load_app] _fini=%p\n", (void*)(uintptr_t)bootb_ctx->_fini_fn);
     bootb_ctx->sig_fn     = load_sec2mem_wrapper(pctx, sig_idx, try_to_use_flash);
     bootb_ctx->flags_fn   = load_sec2mem_wrapper(pctx, flags_idx, try_to_use_flash);
     g_sram_for_code = false;   /* reset for next app load */
@@ -1295,9 +1295,9 @@ void __in_hfa() exec_sync(cmd_ctx_t* ctx) {
     vTaskSetThreadLocalStoragePointer(th, 0, ctx);
 
     bootb_ctx_t* bootb_ctx = ctx->pboot_ctx;
-    #if DEBUG_APP_LOAD
-    goutf("__required_m_api_verion: [%p]\n", bootb_ctx->req_ver_fn);
-    #endif
+    printf("[exec_sync] bootb=%p req_ver=%p main=%p\n",
+           bootb_ctx, (void*)(uintptr_t)bootb_ctx->req_ver_fn,
+           (void*)(uintptr_t)bootb_ctx->main_fn);
     int rav = bootb_ctx->req_ver_fn ? bootb_ctx->req_ver_fn() : MIN_API_VERSION;
     printf("[exec_sync] rav=%d\n", rav);
     #if DEBUG_APP_LOAD
@@ -1341,6 +1341,11 @@ void __in_hfa() exec_sync(cmd_ctx_t* ctx) {
         gouta("_fini done\n");
         #endif
     }
+    /* Signal handlers pointed into the now-freed ELF code image.
+     * Clear them so the parent (shell) never calls a stale pointer
+     * when it resumes and processes deliver_signals(). */
+    ctx->sig_pending = 0;
+    memset(ctx->sig_handler, 0, sizeof(ctx->sig_handler));
     ctx->ret_code = res;
 }
 
@@ -1509,6 +1514,10 @@ void __in_hfa() __exit(int status) {
             gouta("_fini done\n");
             #endif
         }
+        /* Signal handlers pointed into the now-freed ELF code image.
+         * Clear them so the parent never calls a stale pointer. */
+        ctx->sig_pending = 0;
+        memset(ctx->sig_handler, 0, sizeof(ctx->sig_handler));
         ctx->ret_code = status;
         if (ctx->parent_task) {
             xTaskNotifyGive(ctx->parent_task);
@@ -1575,6 +1584,11 @@ void __in_hfa() exec(cmd_ctx_t* ctx) { // like init proc flow
             goutf("ctx [%p], ulTaskNotifyTake[%p]\n", ctx, ctx->parent_task);
             #endif
             deliver_signals(ctx);
+            /* Drain stale task notifications (e.g. from SIGWINCH delivery
+             * which uses xTaskNotifyGive to wake tasks).  Without this,
+             * a pending notification causes ulTaskNotifyTake to return
+             * immediately, making exec() think the child already finished. */
+            while (ulTaskNotifyTake(pdTRUE, 0)) {}
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
             deliver_signals(ctx);
             #if DEBUG_APP_LOAD

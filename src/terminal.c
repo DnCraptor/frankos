@@ -657,7 +657,7 @@ void terminal_resize(terminal_t *t, int client_w, int client_h) {
     if (pids) {
         for (size_t i = 1; i < pids->size; i++) {
             cmd_ctx_t *c = (cmd_ctx_t *)pids->p[i];
-            if (c && c->term == t) {
+            if (c && c->term == t && c->task && c->stage < ZOMBIE) {
                 c->sig_pending |= (1U << SIGWINCH);
                 xTaskNotifyGive(c->task);
             }

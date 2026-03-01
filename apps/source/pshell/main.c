@@ -213,7 +213,10 @@ static void shell_task_fn(void *param) {
 
     pshell_main();
 
-    /* Shell exited — signal close */
+    /* Shell exited — clear handle BEFORE self-delete so the main task's
+     * cleanup path sees NULL and skips the force-delete (double vTaskDelete
+     * on an already-deleted TCB is undefined behaviour in FreeRTOS). */
+    g_shell_task = NULL;
     g_closing = true;
     if (g_main_task)
         xTaskNotifyGive(g_main_task);
@@ -289,13 +292,17 @@ int main(int argc, char **argv) {
     /* Give the shell task a moment to notice g_closing */
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    /* Tear down */
+    /* Tear down — use portMAX_DELAY so timer stop/delete fully complete
+     * before we return (the callback is a function pointer into ELF code;
+     * a pending timer fire after ELF unload causes a jump into freed memory). */
     if (blink_tmr) {
-        xTimerStop(blink_tmr, 0);
-        xTimerDelete(blink_tmr, 0);
+        xTimerStop(blink_tmr, portMAX_DELAY);
+        xTimerDelete(blink_tmr, portMAX_DELAY);
     }
 
-    /* Delete shell task if still running */
+    /* Force-delete shell task only if it hasn't already self-deleted.
+     * shell_task_fn clears g_shell_task before vTaskDelete(NULL), so if
+     * g_shell_task is NULL here the FreeRTOS TCB is already freed. */
     if (g_shell_task) {
         vTaskDelete(g_shell_task);
         g_shell_task = NULL;
