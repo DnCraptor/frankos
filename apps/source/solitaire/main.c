@@ -151,9 +151,15 @@ static const uint8_t *suit_bmps[] = {
  * stride = FB_STRIDE = 320 bytes/line.
  *=========================================================================*/
 
+/* Visible (clipped) client dimensions — set each frame in sol_paint().
+ * When the window extends past the right/bottom screen edge, vis_w/vis_h
+ * are smaller than CLIENT_W/CLIENT_H, preventing scanline overflow. */
+static int16_t vis_w = CLIENT_W;
+static int16_t vis_h = CLIENT_H;
+
 static inline void fb_px(uint8_t *base, int16_t stride,
                           int16_t x, int16_t y, uint8_t c) {
-    if (x < 0 || x >= CLIENT_W || y < 0 || y >= CLIENT_H) return;
+    if (x < 0 || x >= vis_w || y < 0 || y >= vis_h) return;
     uint8_t *p = base + y * stride + (x >> 1);
     if (x & 1)
         *p = (*p & 0xF0) | (c & 0x0F);
@@ -163,9 +169,9 @@ static inline void fb_px(uint8_t *base, int16_t stride,
 
 static void fb_hline(uint8_t *base, int16_t stride,
                       int16_t x, int16_t y, int16_t w, uint8_t c) {
-    if (y < 0 || y >= CLIENT_H || w <= 0) return;
+    if (y < 0 || y >= vis_h || w <= 0) return;
     if (x < 0) { w += x; x = 0; }
-    if (x + w > CLIENT_W) w = CLIENT_W - x;
+    if (x + w > vis_w) w = vis_w - x;
     if (w <= 0) return;
     uint8_t *row = base + y * stride;
     int16_t px = x, end = x + w;
@@ -187,9 +193,9 @@ static void fb_hline(uint8_t *base, int16_t stride,
 
 static void fb_vline(uint8_t *base, int16_t stride,
                       int16_t x, int16_t y, int16_t h, uint8_t c) {
-    if (x < 0 || x >= CLIENT_W || h <= 0) return;
+    if (x < 0 || x >= vis_w || h <= 0) return;
     if (y < 0) { h += y; y = 0; }
-    if (y + h > CLIENT_H) h = CLIENT_H - y;
+    if (y + h > vis_h) h = vis_h - y;
     int off = x >> 1;
     if (x & 1) {
         uint8_t mask_keep = 0xF0;
@@ -1004,6 +1010,13 @@ static void sol_paint(hwnd_t hwnd) {
     int16_t stride;
     uint8_t *fb = wd_fb_ptr(0, 0, &stride);
     if (!fb) return;
+
+    /* Clamp drawing to visible client area to prevent scanline overflow
+     * when the window extends past the right or bottom screen edge. */
+    int16_t cw, ch;
+    wd_get_clip_size(&cw, &ch);
+    vis_w = (cw < CLIENT_W) ? cw : CLIENT_W;
+    vis_h = (ch < CLIENT_H) ? ch : CLIENT_H;
 
     /* Drag partial update: skip full green fill to avoid flicker.
      * This runs inside wm_composite() after cursor erase and before

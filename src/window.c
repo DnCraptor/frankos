@@ -496,10 +496,10 @@ void wm_invalidate(hwnd_t hwnd) {
      * them, but their task is frozen and paint handler must not run. */
     if (windows[hwnd - 1].flags & WF_SUSPENDED) return;
 
-    /* Only the focused window gets real-time updates, UNLESS it is a
-     * background app (e.g. FrankAmp) which keeps running and needs its
-     * window repainted even when not focused. */
-    if (hwnd != focus_hwnd && !swap_is_background(hwnd)) return;
+    /* Only the focused window gets real-time updates.
+     * Background apps (e.g. FrankAmp) keep running (audio plays)
+     * but their window is not repainted until focused again. */
+    if (hwnd != focus_hwnd) return;
 
     windows[hwnd - 1].flags |= WF_DIRTY;
     wm_mark_dirty();

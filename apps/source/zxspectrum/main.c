@@ -259,12 +259,25 @@ static void zx_paint(hwnd_t hwnd) {
     uint8_t *vmem = sys->ram[0];
     bool flash_swap = (sys->blink_counter & 0x10) != 0;
 
-    for (int y = 0; y < 192; y++) {
+    /* Clamp bitmap rendering to visible client area.
+     * Each ZX column produces 4 framebuffer bytes (8 pixels).
+     * Available width from fb_base is (clip_w - BORDER_H) pixels. */
+    int16_t clip_w, clip_h;
+    wd_get_clip_size(&clip_w, &clip_h);
+    int avail_px = clip_w - BORDER_H;
+    if (avail_px < 0) avail_px = 0;
+    int max_cols = avail_px / 8;       /* 8 pixels per ZX column */
+    if (max_cols > 32) max_cols = 32;
+    int max_rows = clip_h - BORDER_V;
+    if (max_rows < 0) max_rows = 0;
+    if (max_rows > 192) max_rows = 192;
+
+    for (int y = 0; y < max_rows; y++) {
         int addr = ((y & 0xC0) << 5) | ((y & 0x07) << 8) | ((y & 0x38) << 2);
         int attr_row = 0x1800 + ((y >> 3) << 5);
         uint8_t *dst = fb_base + y * stride;
 
-        for (int col = 0; col < 32; col++) {
+        for (int col = 0; col < max_cols; col++) {
             uint8_t byte = vmem[addr + col];
             uint8_t attr = vmem[attr_row + col];
 

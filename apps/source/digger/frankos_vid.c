@@ -323,16 +323,25 @@ void digger_paint(hwnd_t hwnd) {
     const uint8_t *src = g_app->framebuffer;
     const uint8_t *lut = g_app->cga_to_color;
 
+    /* Clamp rendering to visible client area to prevent scanline overflow
+     * when the window extends past the right/bottom screen edge. */
+    int16_t clip_w, clip_h;
+    wd_get_clip_size(&clip_w, &clip_h);
+    int max_bytes = clip_w / 2;                     /* pixels → packed bytes */
+    if (max_bytes > DIGGER_FB_STRIDE) max_bytes = DIGGER_FB_STRIDE;
+    int max_rows = clip_h;
+    if (max_rows > DIGGER_HEIGHT) max_rows = DIGGER_HEIGHT;
+
     /*
      * Both framebuffers use the same nibble order:
      *   high nibble = left (even) pixel, low nibble = right (odd) pixel.
      * Translate each nibble from CGA index (0-3) to FRANK OS COLOR_* (0-15).
      */
-    for (int y = 0; y < DIGGER_HEIGHT; y++) {
+    for (int y = 0; y < max_rows; y++) {
         const uint8_t *srow = &src[(y + DIGGER_Y_OFFSET) * DIGGER_FB_STRIDE];
         uint8_t *drow = &dst[y * stride];
 
-        for (int bx = 0; bx < DIGGER_FB_STRIDE; bx++) {
+        for (int bx = 0; bx < max_bytes; bx++) {
             uint8_t sb = srow[bx];
             uint8_t left  = lut[(sb >> 4) & 0x0F];
             uint8_t right = lut[sb & 0x0F];

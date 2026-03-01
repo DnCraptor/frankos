@@ -94,6 +94,12 @@ void wd_icon_32(int16_t x, int16_t y, const uint8_t *icon_data);
  * Returns NULL if no active drawing context. */
 uint8_t *wd_fb_ptr(int16_t cx, int16_t cy, int16_t *stride);
 
+/* Returns the clipped client area dimensions (in pixels).
+ * After wd_begin(), these reflect how much of the client area is actually
+ * visible on screen.  Apps using wd_fb_ptr() must limit writes to
+ * these bounds to prevent scanline overflow. */
+void wd_get_clip_size(int16_t *w, int16_t *h);
+
 /* Standard Win95-style push button (auto-clipped to client area).
  * label   - button text (centered)
  * focused - if true, draws dotted focus rectangle

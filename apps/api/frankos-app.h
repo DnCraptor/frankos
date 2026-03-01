@@ -549,6 +549,14 @@ static inline uint8_t *wd_fb_ptr(int16_t cx, int16_t cy, int16_t *stride) {
     return ((fn_t)_sys_table_ptrs[442])(cx, cy, stride);
 }
 
+/* 501: wd_get_clip_size — returns clipped client area dimensions (pixels).
+ * After wd_begin(), these reflect how much of the client area is visible.
+ * Apps using wd_fb_ptr() must limit writes to these bounds. */
+static inline void wd_get_clip_size(int16_t *w, int16_t *h) {
+    typedef void (*fn_t)(int16_t*, int16_t*);
+    ((fn_t)_sys_table_ptrs[501])(w, h);
+}
+
 /* ========================================================================
  * Clipboard API (indices 451–454)
  * ======================================================================== */

@@ -669,6 +669,7 @@ unsigned long __in_systable() __aligned(4096) sys_table_ptrs[] = {
     file_assoc_open_with,   // 498
     file_assoc_get_apps,    // 499
     desktop_add_shortcut,   // 500
+    wd_get_clip_size,       // 501
     // TODO:
     0
 };

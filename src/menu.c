@@ -473,6 +473,9 @@ void menu_popup_show(hwnd_t owner, int16_t sx, int16_t sy,
     /* Close any open dropdown first */
     if (menu_is_open()) menu_close();
 
+    /* Close any existing popup (prevents stacking) */
+    if (popup_visible) menu_popup_close();
+
     popup_owner = owner;
     popup_count = count > MENU_POPUP_MAX ? MENU_POPUP_MAX : count;
     for (int i = 0; i < popup_count; i++)
