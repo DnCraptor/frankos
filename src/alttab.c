@@ -132,6 +132,9 @@ void alttab_open(void) {
     at_original_focus = wm_get_focus();
     at_sel = (at_count >= 2) ? 1 : 0;  /* pre-select second entry, or only entry */
     calc_geometry();
+    /* Deactivate the current window so it appears inactive while the
+     * overlay is visible — focus is restored on commit or cancel. */
+    wm_set_focus(HWND_NULL);
 }
 
 void alttab_cycle(void) {
@@ -183,6 +186,8 @@ void alttab_commit(void) {
 void alttab_cancel(void) {
     if (!at_active) return;
     at_active = false;
+    /* Restore focus to the window that was active before the overlay */
+    wm_set_focus(at_original_focus);
     wm_force_full_repaint();
 }
 

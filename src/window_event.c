@@ -156,9 +156,16 @@ void wm_dispatch_events(void) {
             mouse_pos.y = ev->mouse.y;
         }
 
-        /* Deliver to window's event handler (skip suspended windows) */
+        /* Deliver to window's event handler.
+         * Focus events (WM_KILLFOCUS / WM_SETFOCUS) must be delivered even
+         * to suspended windows — the swap subsystem suspends the main task
+         * BEFORE the focus event is dispatched, so without this exception
+         * the app never learns it lost focus and background tasks (cursor
+         * blink, direct-FB writes) keep running. */
         window_t *win = wm_get_window(hwnd);
-        if (win && win->event_handler && !(win->flags & WF_SUSPENDED)) {
+        bool is_focus_event = (ev->type == WM_KILLFOCUS || ev->type == WM_SETFOCUS);
+        if (win && win->event_handler &&
+            (is_focus_event || !(win->flags & WF_SUSPENDED))) {
             win->event_handler(hwnd, ev);
         } else if (hwnd == HWND_NULL && ev->type == WM_COMMAND) {
             /* Desktop context menu commands (popup_owner = HWND_NULL) */

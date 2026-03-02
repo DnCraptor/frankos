@@ -22,9 +22,18 @@
     {"atan2f", 2 | (2 << 5) | (0b11 << 10), math_defines, atan2f, 1},
     {"atanf", 1 | (1 << 5) | (1 << 10), math_defines, __wrap_atanf, 1},
     {"atanhf", 1 | (1 << 5) | (1 << 10), math_defines, __wrap_atanhf, 1},
+#else
+    {"atan2f", 2 | (2 << 5) | (0b11 << 10), math_defines, wrap_atan2f, 1},
+    {"atanf", 1 | (1 << 5) | (1 << 10), math_defines, wrap_atanf, 1},
 #endif
     {"atoi", 1, stdlib_defines, atoi, 0},
     {"calloc", 2, stdlib_defines, wrap_calloc, 0},
+#ifdef PSHELL_FRANKOS
+    {"clipboard_clear", 0, frankos_defines, wrap_clipboard_clear, 0},
+    {"clipboard_get_length", 0, frankos_defines, wrap_clipboard_get_length, 0},
+    {"clipboard_get_text", 0, frankos_defines, wrap_clipboard_get_text, 0},
+    {"clipboard_set_text", 2, frankos_defines, wrap_clipboard_set_text, 0},
+#endif
 #ifndef PSHELL_FRANKOS
     {"clock_configure", 5, clk_defines, clock_configure, 0},
     {"clock_configure_gpin", 4, clk_defines, clock_configure_gpin, 0},
@@ -39,10 +48,32 @@
 #ifndef PSHELL_FRANKOS
     {"cosf", 1 | (1 << 5) | (1 << 10), math_defines, __wrap_cosf, 1},
     {"coshf", 1 | (1 << 5) | (1 << 10), math_defines, __wrap_coshf, 1},
+#else
+    {"cosf", 1 | (1 << 5) | (1 << 10), math_defines, wrap_cosf, 1},
+#endif
+#ifdef PSHELL_FRANKOS
+    {"dialog_input_get_text", 0, frankos_defines, wrap_dialog_input_get_text, 0},
+    {"dialog_input_show", 5, frankos_defines, wrap_dialog_input_show, 0},
+    {"dialog_show", 5, frankos_defines, wrap_dialog_show, 0},
 #endif
     {"exit", 1, stdlib_defines, cc_exit, 0},
+#ifdef PSHELL_FRANKOS
+    {"expf", 1 | (1 << 5) | (1 << 10), math_defines, wrap_expf, 1},
+    {"fabsf", 1 | (1 << 5) | (1 << 10), math_defines, wrap_fabsf, 1},
+    {"file_dialog_get_path", 0, frankos_defines, wrap_file_dialog_get_path, 0},
+    {"file_dialog_open", 4, frankos_defines, wrap_file_dialog_open, 0},
+    {"file_dialog_save", 5, frankos_defines, wrap_file_dialog_save, 0},
+    {"find_dialog_case_sensitive", 0, frankos_defines, wrap_find_dialog_case_sensitive, 0},
+    {"find_dialog_close", 0, frankos_defines, wrap_find_dialog_close, 0},
+    {"find_dialog_get_replace_text", 0, frankos_defines, wrap_find_dialog_get_replace_text, 0},
+    {"find_dialog_get_text", 0, frankos_defines, wrap_find_dialog_get_text, 0},
+    {"find_dialog_show", 1, frankos_defines, wrap_find_dialog_show, 0},
+    {"floorf", 1 | (1 << 5) | (1 << 10), math_defines, wrap_floorf, 1},
+#endif
 #ifndef PSHELL_FRANKOS
     {"fmodf", 2 | (2 << 5) | (0b11 << 10), math_defines, fmodf, 1},
+#else
+    {"fmodf", 2 | (2 << 5) | (0b11 << 10), math_defines, wrap_fmodf, 1},
 #endif
     {"free", 1, stdlib_defines, wrap_free, 0},
 #ifndef PSHELL_FRANKOS
@@ -146,21 +177,34 @@
     {"irq_set_priority", 2, irq_defines, irq_set_priority, 0},
     {"log10f", 1 | (1 << 5) | (1 << 10), math_defines, log10f, 1},
     {"logf", 1 | (1 << 5) | (1 << 10), math_defines, logf, 1},
+#else
+    {"log10f", 1 | (1 << 5) | (1 << 10), math_defines, wrap_log10f, 1},
+    {"logf", 1 | (1 << 5) | (1 << 10), math_defines, wrap_logf, 1},
 #endif
     {"lseek", 3, stdio_defines, wrap_lseek, 0},
     {"malloc", 1, stdlib_defines, wrap_malloc, 0},
     {"memcmp", 3, string_defines, memcmp, 0},
     {"memcpy", 3, string_defines, memcpy, 0},
     {"memset", 3, string_defines, memset, 0},
+#ifdef PSHELL_FRANKOS
+    {"menu_popup_show", 5, frankos_defines, wrap_menu_popup_show, 0},
+    {"menu_set", 2, frankos_defines, wrap_menu_set, 0},
+#endif
     {"open", 2, stdio_defines, wrap_open, 0},
     {"opendir", 1, stdio_defines, wrap_opendir, 0},
     {"popcount", 1, stdlib_defines, wrap_popcount, 0},
 #ifndef PSHELL_FRANKOS
     {"powf", 2 | (2 << 5) | (0b11 << 10), math_defines, powf, 1},
+#else
+    {"powf", 2 | (2 << 5) | (0b11 << 10), math_defines, wrap_powf, 1},
 #endif
     {"printf", 1, stdio_defines, x_printf, 0},
 #ifdef PSHELL_FRANKOS
+    {"psram_alloc", 1, frankos_defines, wrap_psram_alloc, 0},
+    {"psram_free", 1, frankos_defines, wrap_psram_free, 0},
+    {"psram_is_available", 0, frankos_defines, wrap_psram_is_available, 0},
     {"putchar", 1, stdio_defines, wrap_putchar_frankos, 0},
+    {"pvTimerGetTimerID", 1, frankos_defines, wrap_pvTimerGetTimerID, 0},
 #else
     {"putchar", 1, stdio_defines, putchar, 0},
 #endif
@@ -203,11 +247,23 @@
     {"readdir", 2, stdio_defines, wrap_readdir, 0},
     {"remove", 1, stdio_defines, wrap_remove, 0},
     {"rename", 2, stdio_defines, wrap_rename, 0},
+#ifdef PSHELL_FRANKOS
+    {"replace_dialog_show", 1, frankos_defines, wrap_replace_dialog_show, 0},
+#endif
     {"screen_height", 0, stdio_defines, wrap_screen_height, 0},
     {"screen_width", 0, stdio_defines, wrap_screen_width, 0},
+#ifdef PSHELL_FRANKOS
+    {"scrollbar_event", 3, frankos_defines, wrap_scrollbar_event, 0},
+    {"scrollbar_init", 2, frankos_defines, wrap_scrollbar_init, 0},
+    {"scrollbar_paint", 1, frankos_defines, wrap_scrollbar_paint, 0},
+    {"scrollbar_set_pos", 2, frankos_defines, wrap_scrollbar_set_pos, 0},
+    {"scrollbar_set_range", 3, frankos_defines, wrap_scrollbar_set_range, 0},
+#endif
 #ifndef PSHELL_FRANKOS
     {"sinf", 1 | (1 << 5) | (1 << 10), math_defines, __wrap_sinf, 1},
     {"sinhf", 1 | (1 << 5) | (1 << 10), math_defines, __wrap_sinhf, 1},
+#else
+    {"sinf", 1 | (1 << 5) | (1 << 10), math_defines, wrap_sinf, 1},
 #endif
 #ifdef PSHELL_FRANKOS
     {"sleep_ms", 1, time_defines, wrap_sleep_ms, 0},
@@ -218,6 +274,11 @@
     {"sleep_us", 1, time_defines, wrap_sleep_us, 0},
 #else
     {"sleep_us", 1, time_defines, sleep_us, 0},
+#endif
+#ifdef PSHELL_FRANKOS
+    {"snd_close", 1, frankos_defines, wrap_snd_close, 0},
+    {"snd_open", 1, frankos_defines, wrap_snd_open, 0},
+    {"snd_write", 3, frankos_defines, wrap_snd_write, 0},
 #endif
 #ifndef PSHELL_FRANKOS
     {"spi_deinit", 1, spi_defines, spi_deinit, 0},
@@ -248,6 +309,8 @@
 #if PICO_RP2350
     {"sqrtf", 1 | (1 << 5) | (1 << 10), math_defines, 0, 1},
 #endif
+#else
+    {"sqrtf", 1 | (1 << 5) | (1 << 10), math_defines, wrap_sqrtf, 1},
 #endif
     {"srand", 1, stdlib_defines, srand, 0},
     {"strcat", 2, string_defines, strcat, 0},
@@ -264,8 +327,29 @@
 #ifndef PSHELL_FRANKOS
     {"tanf", 1 | (1 << 5) | (1 << 10), math_defines, __wrap_tanf, 1},
     {"tanhf", 1 | (1 << 5) | (1 << 10), math_defines, __wrap_tanhf, 1},
+#else
+    {"tanf", 1 | (1 << 5) | (1 << 10), math_defines, wrap_tanf, 1},
+    {"taskbar_invalidate", 0, frankos_defines, wrap_taskbar_invalidate, 0},
+    {"textarea_blink", 1, frankos_defines, wrap_textarea_blink, 0},
+    {"textarea_copy", 1, frankos_defines, wrap_textarea_copy, 0},
+    {"textarea_cut", 1, frankos_defines, wrap_textarea_cut, 0},
+    {"textarea_event", 2, frankos_defines, wrap_textarea_event, 0},
+    {"textarea_find", 4, frankos_defines, wrap_textarea_find, 0},
+    {"textarea_get_length", 1, frankos_defines, wrap_textarea_get_length, 0},
+    {"textarea_get_text", 1, frankos_defines, wrap_textarea_get_text, 0},
+    {"textarea_init", 4, frankos_defines, wrap_textarea_init, 0},
+    {"textarea_paint", 1, frankos_defines, wrap_textarea_paint, 0},
+    {"textarea_paste", 1, frankos_defines, wrap_textarea_paste, 0},
+    {"textarea_replace", 4, frankos_defines, wrap_textarea_replace, 0},
+    {"textarea_replace_all", 4, frankos_defines, wrap_textarea_replace_all, 0},
+    {"textarea_select_all", 1, frankos_defines, wrap_textarea_select_all, 0},
+    {"textarea_set_rect", 5, frankos_defines, wrap_textarea_set_rect, 0},
+    {"textarea_set_text", 3, frankos_defines, wrap_textarea_set_text, 0},
 #endif
     {"time_us_32", 0, time_defines, time_us_32, 0},
+#ifdef PSHELL_FRANKOS
+    {"truncf", 1 | (1 << 5) | (1 << 10), math_defines, wrap_truncf, 1},
+#endif
 #ifndef PSHELL_FRANKOS
     {"uart_default_tx_wait_blocking", 0, uart_defines,uart_default_tx_wait_blocking, 0},
     {"uart_deinit", 1, uart_defines, uart_deinit, 0},
@@ -311,5 +395,39 @@
     {"user_irq_unclaim", 1, irq_defines, user_irq_unclaim, 0},
     {"wfi", 0, sync_defines, wrap_wfi, 0},
 #endif
-    {"write", 3, stdio_defines, wrap_write, 0}
+#ifdef PSHELL_FRANKOS
+    {"wd_begin", 1, frankos_defines, wrap_wd_begin, 0},
+    {"wd_bevel_rect", 7, frankos_defines, wrap_wd_bevel_rect, 0},
+    {"wd_button", 7, frankos_defines, wrap_wd_button, 0},
+    {"wd_char_ui", 5, frankos_defines, wrap_wd_char_ui, 0},
+    {"wd_clear", 1, frankos_defines, wrap_wd_clear, 0},
+    {"wd_end", 0, frankos_defines, wrap_wd_end, 0},
+    {"wd_fb_ptr", 3, frankos_defines, wrap_wd_fb_ptr, 0},
+    {"wd_fill_rect", 5, frankos_defines, wrap_wd_fill_rect, 0},
+    {"wd_get_clip_size", 2, frankos_defines, wrap_wd_get_clip_size, 0},
+    {"wd_hline", 4, frankos_defines, wrap_wd_hline, 0},
+    {"wd_icon_16", 3, frankos_defines, wrap_wd_icon_16, 0},
+    {"wd_icon_32", 3, frankos_defines, wrap_wd_icon_32, 0},
+    {"wd_pixel", 3, frankos_defines, wrap_wd_pixel, 0},
+    {"wd_rect", 5, frankos_defines, wrap_wd_rect, 0},
+    {"wd_text_ui", 5, frankos_defines, wrap_wd_text_ui, 0},
+    {"wd_vline", 4, frankos_defines, wrap_wd_vline, 0},
+    {"wm_create_window", 8, frankos_defines, wrap_wm_create_window, 0},
+    {"wm_destroy_window", 1, frankos_defines, wrap_wm_destroy_window, 0},
+    {"wm_find_window_by_title", 1, frankos_defines, wrap_wm_find_window_by_title, 0},
+    {"wm_get_window", 1, frankos_defines, wrap_wm_get_window, 0},
+    {"wm_invalidate", 1, frankos_defines, wrap_wm_invalidate, 0},
+    {"wm_is_fullscreen", 1, frankos_defines, wrap_wm_is_fullscreen, 0},
+    {"wm_mark_dirty", 0, frankos_defines, wrap_wm_mark_dirty, 0},
+    {"wm_post_event", 2, frankos_defines, wrap_wm_post_event, 0},
+    {"wm_set_focus", 1, frankos_defines, wrap_wm_set_focus, 0},
+    {"wm_set_pending_icon", 1, frankos_defines, wrap_wm_set_pending_icon, 0},
+    {"wm_set_window_rect", 5, frankos_defines, wrap_wm_set_window_rect, 0},
+    {"wm_show_window", 1, frankos_defines, wrap_wm_show_window, 0},
+    {"wm_toggle_fullscreen", 1, frankos_defines, wrap_wm_toggle_fullscreen, 0},
+#endif
+    {"write", 3, stdio_defines, wrap_write, 0},
+#ifdef PSHELL_FRANKOS
+    {"xTimerCreate", 5, frankos_defines, wrap_xTimerCreate, 0},
+#endif
 // clang-format on

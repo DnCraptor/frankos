@@ -388,7 +388,17 @@ static void compositor_task(void *params) {
         run_dialog_check_pending();
 
         /* Deferred spawns from input_task hotkeys — handled here on the
-         * compositor task so WM calls are always on the right task/stack. */
+         * compositor task so WM calls are always on the right task/stack.
+         * If the focused window is fullscreen, exit it first so the new
+         * window/dialog appears over a normal desktop. */
+        if (g_spawn_terminal_pending || g_spawn_navigator_pending ||
+            g_open_run_dialog_pending) {
+            hwnd_t fs_win = wm_get_focus();
+            if (fs_win != HWND_NULL && wm_is_fullscreen(fs_win)) {
+                wm_toggle_fullscreen(fs_win);
+                g_video_dirty = true;
+            }
+        }
         if (g_spawn_terminal_pending) {
             g_spawn_terminal_pending = false;
             spawn_terminal_window();
@@ -547,9 +557,13 @@ static void input_task(void *params) {
                 }
             }
 
-            /* Alt+Tab overlay: open on first press, cycle on repeat */
+            /* Alt+Tab overlay: open on first press, cycle on repeat.
+             * If the focused window is fullscreen, exit it first. */
             if (kev.pressed && (kev.modifiers & KBD_MOD_ALT) &&
                 kev.hid_code == 0x2B /* HID_KEY_TAB */) {
+                hwnd_t fs_focus = wm_get_focus();
+                if (fs_focus != HWND_NULL && wm_is_fullscreen(fs_focus))
+                    wm_toggle_fullscreen(fs_focus);
                 if (!alttab_is_active())
                     alttab_open();
                 else

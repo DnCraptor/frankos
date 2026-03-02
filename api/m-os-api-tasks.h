@@ -484,6 +484,16 @@ inline static void vTaskDelete( TaskHandle_t xTaskToDelete ) {
     ((vTaskDelete_ptr_t)_sys_table_ptrs[1])(xTaskToDelete);
 }
 
+inline static void vTaskSuspend( TaskHandle_t xTaskToSuspend ) {
+    typedef void (*vTaskSuspend_ptr_t)( TaskHandle_t );
+    ((vTaskSuspend_ptr_t)_sys_table_ptrs[_vTaskSuspendPtrIdx])(xTaskToSuspend);
+}
+
+inline static void vTaskResume( TaskHandle_t xTaskToResume ) {
+    typedef void (*vTaskResume_ptr_t)( TaskHandle_t );
+    ((vTaskResume_ptr_t)_sys_table_ptrs[_vTaskResumePtrIdx])(xTaskToResume);
+}
+
 typedef void (*vApplicationMallocFailedHookPtr)( void );
 typedef vApplicationMallocFailedHookPtr (*getApplicationMallocFailedHookPtr_ptr_t)();
 typedef void (*setApplicationMallocFailedHookPtr_ptr_t)(vApplicationMallocFailedHookPtr ptr);

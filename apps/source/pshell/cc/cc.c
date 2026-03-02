@@ -454,6 +454,312 @@ static int wrap_getchar_timeout_us(int us) { return vt100_getch_timeout(us); }
 static void wrap_putchar_frankos(int c) { vt100_putc((char)c); }
 static void wrap_sleep_ms(int ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
 static void wrap_sleep_us(int us) { vTaskDelay(pdMS_TO_TICKS(us / 1000 + 1)); }
+
+// Math wrappers — sys_table has double versions, cc needs float
+#define SYS(idx) _sys_table_ptrs[idx]
+static float wrap_truncf(float x) { return (float)((double (*)(double))SYS(200))((double)x); }
+static float wrap_floorf(float x) { return (float)((double (*)(double))SYS(201))((double)x); }
+static float wrap_powf(float x, float y) {
+    return (float)((double (*)(double, double))SYS(202))((double)x, (double)y);
+}
+static float wrap_sqrtf(float x) { return (float)((double (*)(double))SYS(203))((double)x); }
+static float wrap_sinf(float x) { return (float)((double (*)(double))SYS(204))((double)x); }
+static float wrap_cosf(float x) { return (float)((double (*)(double))SYS(205))((double)x); }
+static float wrap_tanf(float x) { return (float)((double (*)(double))SYS(206))((double)x); }
+static float wrap_atanf(float x) { return (float)((double (*)(double))SYS(207))((double)x); }
+static float wrap_logf(float x) { return (float)((double (*)(double))SYS(208))((double)x); }
+static float wrap_log10f(float x) {
+    return (float)(((double (*)(double))SYS(208))((double)x) /
+                   ((double (*)(double))SYS(208))(10.0));
+}
+static float wrap_expf(float x) { return (float)((double (*)(double))SYS(209))((double)x); }
+static float wrap_fabsf(float x) { return x < 0 ? -x : x; }
+static float wrap_fmodf(float x, float y) {
+    float q = wrap_truncf(x / y);
+    return x - q * y;
+}
+static float wrap_atan2f(float y, float x) {
+    if (x > 0) return wrap_atanf(y / x);
+    if (x < 0) {
+        if (y >= 0) return wrap_atanf(y / x) + 3.14159265f;
+        return wrap_atanf(y / x) - 3.14159265f;
+    }
+    if (y > 0) return 1.57079632f;
+    if (y < 0) return -1.57079632f;
+    return 0.0f;
+}
+
+// GUI wrappers — call through sys_table for FRANK OS windowed API
+// Window manager
+static int wrap_wm_create_window(int x, int y, int w, int h,
+                                 char* title, int style,
+                                 void* event_cb, void* paint_cb) {
+    return ((int (*)(int, int, int, int, char*, int, void*, void*))SYS(404))(
+        x, y, w, h, title, style, event_cb, paint_cb);
+}
+static void wrap_wm_destroy_window(int hwnd) {
+    ((void (*)(int))SYS(405))(hwnd);
+}
+static void wrap_wm_show_window(int hwnd) {
+    ((void (*)(int))SYS(406))(hwnd);
+}
+static void wrap_wm_set_focus(int hwnd) {
+    ((void (*)(int))SYS(407))(hwnd);
+}
+static int wrap_wm_get_window(int hwnd) {
+    return ((int (*)(int))SYS(408))(hwnd);
+}
+static void wrap_wm_set_window_rect(int hwnd, int x, int y, int w, int h) {
+    ((void (*)(int, int, int, int, int))SYS(409))(hwnd, x, y, w, h);
+}
+static void wrap_wm_invalidate(int hwnd) {
+    ((void (*)(int))SYS(410))(hwnd);
+}
+static int wrap_wm_post_event(int hwnd, void* event) {
+    return ((int (*)(int, void*))SYS(411))(hwnd, event);
+}
+static void wrap_wm_set_pending_icon(void* data) {
+    ((void (*)(void*))SYS(432))(data);
+}
+static void wrap_wm_mark_dirty(void) {
+    ((void (*)(void))SYS(482))();
+}
+static void wrap_wm_toggle_fullscreen(int hwnd) {
+    ((void (*)(int))SYS(502))(hwnd);
+}
+static int wrap_wm_is_fullscreen(int hwnd) {
+    return ((int (*)(int))SYS(503))(hwnd);
+}
+static int wrap_wm_find_window_by_title(char* title) {
+    return ((int (*)(char*))SYS(504))(title);
+}
+
+// Drawing
+static void wrap_wd_begin(int hwnd) {
+    ((void (*)(int))SYS(413))(hwnd);
+}
+static void wrap_wd_end(void) {
+    ((void (*)(void))SYS(414))();
+}
+static void wrap_wd_pixel(int x, int y, int color) {
+    ((void (*)(int, int, int))SYS(415))(x, y, color);
+}
+static void wrap_wd_hline(int x, int y, int w, int color) {
+    ((void (*)(int, int, int, int))SYS(416))(x, y, w, color);
+}
+static void wrap_wd_vline(int x, int y, int h, int color) {
+    ((void (*)(int, int, int, int))SYS(417))(x, y, h, color);
+}
+static void wrap_wd_fill_rect(int x, int y, int w, int h, int color) {
+    ((void (*)(int, int, int, int, int))SYS(418))(x, y, w, h, color);
+}
+static void wrap_wd_clear(int color) {
+    ((void (*)(int))SYS(419))(color);
+}
+static void wrap_wd_rect(int x, int y, int w, int h, int color) {
+    ((void (*)(int, int, int, int, int))SYS(420))(x, y, w, h, color);
+}
+static void wrap_wd_bevel_rect(int x, int y, int w, int h,
+                               int light, int dark, int face) {
+    ((void (*)(int, int, int, int, int, int, int))SYS(421))(
+        x, y, w, h, light, dark, face);
+}
+static void wrap_wd_char_ui(int x, int y, int c, int fg, int bg) {
+    ((void (*)(int, int, int, int, int))SYS(422))(x, y, c, fg, bg);
+}
+static void wrap_wd_text_ui(int x, int y, char* str, int fg, int bg) {
+    ((void (*)(int, int, char*, int, int))SYS(423))(x, y, str, fg, bg);
+}
+static void wrap_wd_icon_32(int x, int y, void* data) {
+    ((void (*)(int, int, void*))SYS(433))(x, y, data);
+}
+static void wrap_wd_icon_16(int x, int y, void* data) {
+    ((void (*)(int, int, void*))SYS(434))(x, y, data);
+}
+static void wrap_wd_button(int x, int y, int w, int h,
+                           char* label, int focused, int pressed) {
+    ((void (*)(int, int, int, int, char*, int, int))SYS(441))(
+        x, y, w, h, label, focused, pressed);
+}
+static int wrap_wd_fb_ptr(int cx, int cy, void* stride) {
+    return ((int (*)(int, int, void*))SYS(442))(cx, cy, stride);
+}
+static void wrap_wd_get_clip_size(void* w, void* h) {
+    ((void (*)(void*, void*))SYS(501))(w, h);
+}
+
+// Menus
+static void wrap_menu_set(int hwnd, void* bar) {
+    ((void (*)(int, void*))SYS(424))(hwnd, bar);
+}
+static void wrap_menu_popup_show(int owner, int sx, int sy,
+                                 void* items, int count) {
+    ((void (*)(int, int, int, void*, int))SYS(435))(owner, sx, sy, items, count);
+}
+
+// Dialogs
+static int wrap_dialog_show(int parent, char* title, char* text,
+                            int icon, int buttons) {
+    return ((int (*)(int, char*, char*, int, int))SYS(425))(
+        parent, title, text, icon, buttons);
+}
+static int wrap_dialog_input_show(int parent, char* title, char* prompt,
+                                  char* initial, int maxlen) {
+    return ((int (*)(int, char*, char*, char*, int))SYS(436))(
+        parent, title, prompt, initial, maxlen);
+}
+static char* wrap_dialog_input_get_text(void) {
+    return ((char* (*)(void))SYS(437))();
+}
+static void wrap_taskbar_invalidate(void) {
+    ((void (*)(void))SYS(426))();
+}
+static int wrap_file_dialog_open(int hwnd, char* title, char* path,
+                                 char* filter) {
+    return ((int (*)(int, char*, char*, char*))SYS(439))(
+        hwnd, title, path, filter);
+}
+static char* wrap_file_dialog_get_path(void) {
+    return ((char* (*)(void))SYS(440))();
+}
+static int wrap_file_dialog_save(int hwnd, char* title, char* path,
+                                 char* filter, char* name) {
+    return ((int (*)(int, char*, char*, char*, char*))SYS(475))(
+        hwnd, title, path, filter, name);
+}
+
+// Find/Replace dialog
+static int wrap_find_dialog_show(int parent) {
+    return ((int (*)(int))SYS(476))(parent);
+}
+static int wrap_replace_dialog_show(int parent) {
+    return ((int (*)(int))SYS(477))(parent);
+}
+static char* wrap_find_dialog_get_text(void) {
+    return ((char* (*)(void))SYS(478))();
+}
+static char* wrap_find_dialog_get_replace_text(void) {
+    return ((char* (*)(void))SYS(479))();
+}
+static int wrap_find_dialog_case_sensitive(void) {
+    return ((int (*)(void))SYS(480))();
+}
+static void wrap_find_dialog_close(void) {
+    ((void (*)(void))SYS(481))();
+}
+
+// Clipboard
+static int wrap_clipboard_set_text(char* text, int len) {
+    return ((int (*)(char*, int))SYS(451))(text, len);
+}
+static char* wrap_clipboard_get_text(void) {
+    return ((char* (*)(void))SYS(452))();
+}
+static int wrap_clipboard_get_length(void) {
+    return ((int (*)(void))SYS(453))();
+}
+static void wrap_clipboard_clear(void) {
+    ((void (*)(void))SYS(454))();
+}
+
+// Scrollbar controls
+static void wrap_scrollbar_init(void* sb, int horiz) {
+    ((void (*)(void*, int))SYS(455))(sb, horiz);
+}
+static void wrap_scrollbar_set_range(void* sb, int range, int page) {
+    ((void (*)(void*, int, int))SYS(456))(sb, range, page);
+}
+static void wrap_scrollbar_set_pos(void* sb, int pos) {
+    ((void (*)(void*, int))SYS(457))(sb, pos);
+}
+static void wrap_scrollbar_paint(void* sb) {
+    ((void (*)(void*))SYS(458))(sb);
+}
+static int wrap_scrollbar_event(void* sb, void* event, void* newpos) {
+    return ((int (*)(void*, void*, void*))SYS(459))(sb, event, newpos);
+}
+
+// Textarea controls
+static void wrap_textarea_init(void* ta, void* buf, int size, int hwnd) {
+    ((void (*)(void*, void*, int, int))SYS(460))(ta, buf, size, hwnd);
+}
+static void wrap_textarea_set_text(void* ta, char* text, int len) {
+    ((void (*)(void*, char*, int))SYS(461))(ta, text, len);
+}
+static char* wrap_textarea_get_text(void* ta) {
+    return ((char* (*)(void*))SYS(462))(ta);
+}
+static int wrap_textarea_get_length(void* ta) {
+    return ((int (*)(void*))SYS(463))(ta);
+}
+static void wrap_textarea_set_rect(void* ta, int x, int y, int w, int h) {
+    ((void (*)(void*, int, int, int, int))SYS(464))(ta, x, y, w, h);
+}
+static void wrap_textarea_paint(void* ta) {
+    ((void (*)(void*))SYS(465))(ta);
+}
+static int wrap_textarea_event(void* ta, void* event) {
+    return ((int (*)(void*, void*))SYS(466))(ta, event);
+}
+static void wrap_textarea_cut(void* ta) {
+    ((void (*)(void*))SYS(467))(ta);
+}
+static void wrap_textarea_copy(void* ta) {
+    ((void (*)(void*))SYS(468))(ta);
+}
+static void wrap_textarea_paste(void* ta) {
+    ((void (*)(void*))SYS(469))(ta);
+}
+static void wrap_textarea_select_all(void* ta) {
+    ((void (*)(void*))SYS(470))(ta);
+}
+static int wrap_textarea_find(void* ta, char* needle, int casesens, int fwd) {
+    return ((int (*)(void*, char*, int, int))SYS(471))(ta, needle, casesens, fwd);
+}
+static int wrap_textarea_replace(void* ta, char* needle, char* repl,
+                                 int casesens) {
+    return ((int (*)(void*, char*, char*, int))SYS(472))(ta, needle, repl, casesens);
+}
+static int wrap_textarea_replace_all(void* ta, char* needle, char* repl,
+                                     int casesens) {
+    return ((int (*)(void*, char*, char*, int))SYS(473))(ta, needle, repl, casesens);
+}
+static void wrap_textarea_blink(void* ta) {
+    ((void (*)(void*))SYS(474))(ta);
+}
+
+// Sound
+static int wrap_snd_open(int rate) {
+    return ((int (*)(int))SYS(483))(rate);
+}
+static void wrap_snd_write(int ch, void* samples, int frames) {
+    ((void (*)(int, void*, int))SYS(484))(ch, samples, frames);
+}
+static void wrap_snd_close(int ch) {
+    ((void (*)(int))SYS(485))(ch);
+}
+
+// PSRAM
+static void* wrap_psram_alloc(int size) {
+    return ((void* (*)(int))SYS(491))(size);
+}
+static void wrap_psram_free(void* ptr) {
+    ((void (*)(void*))SYS(492))(ptr);
+}
+static int wrap_psram_is_available(void) {
+    return ((int (*)(void))SYS(493))();
+}
+
+// Timers
+static void* wrap_xTimerCreate(char* name, int period, int reload,
+                               void* id, void* cb) {
+    return ((void* (*)(char*, int, int, void*, void*))SYS(427))(
+        name, period, reload, id, cb);
+}
+static void* wrap_pvTimerGetTimerID(void* timer) {
+    return ((void* (*)(void*))SYS(429))(timer);
+}
+#undef SYS
 #endif
 
 static int x_printf(int etype);
@@ -479,9 +785,14 @@ static const struct {
     const struct define_grp* grp;
 } includes[] = {{"stdio", stdio_defines}, {"stdlib", stdlib_defines}, {"string", string_defines},
                 {"math", math_defines},   {"sync", sync_defines},     {"time", time_defines},
+#ifndef PSHELL_FRANKOS
                 {"gpio", gpio_defines},   {"pwm", pwm_defines},       {"adc", adc_defines},
                 {"clocks", clk_defines},  {"i2c", i2c_defines},       {"spi", spi_defines},
-                {"irq", irq_defines},     {"uart", uart_defines},     {0}};
+                {"irq", irq_defines},     {"uart", uart_defines},
+#else
+                {"frankos", frankos_defines},
+#endif
+                {0}};
 
 static lfs_file_t* fd UDATA;
 static char* fp UDATA;

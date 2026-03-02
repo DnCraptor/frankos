@@ -4,7 +4,7 @@
  * https://rh1.tech
  *
  * Full-featured text editor with menu bar, file I/O, clipboard,
- * find/replace, and save-changes prompts.
+ * find/replace, save-changes prompts, and syntax highlighting.
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
@@ -41,6 +41,28 @@
 
 #define CMD_ABOUT         300
 
+/* Syntax menu command IDs */
+#define CMD_SYNTAX_PLAIN  400
+#define CMD_SYNTAX_C      401
+#define CMD_SYNTAX_CPP    402
+#define CMD_SYNTAX_INI    403
+
+/* Syntax modes */
+#define SYNTAX_PLAIN      0
+#define SYNTAX_C          1
+#define SYNTAX_CPP        2
+#define SYNTAX_INI        3
+
+/* Token types for syntax coloring */
+#define TOK_NORMAL        0
+#define TOK_KEYWORD       1
+#define TOK_TYPE          2
+#define TOK_STRING        3
+#define TOK_COMMENT       4
+#define TOK_PREPROC       5
+#define TOK_NUMBER        6
+#define TOK_SECTION       7   /* INI [section] */
+
 /* Pending action states (for save-changes dialog) */
 #define PENDING_NONE      0
 #define PENDING_NEW       1
@@ -58,6 +80,7 @@ typedef struct {
     char         filepath[NP_PATH_MAX];
     bool         modified;
     uint8_t      pending_action;
+    uint8_t      syntax_mode;
     TimerHandle_t blink_timer;
 } notepad_t;
 
@@ -72,7 +95,7 @@ static volatile bool app_closing;
 static void np_setup_menu(hwnd_t hwnd) {
     menu_bar_t bar;
     memset(&bar, 0, sizeof(bar));
-    bar.menu_count = 3;
+    bar.menu_count = 4;
 
     /* File menu */
     menu_def_t *file = &bar.menus[0];
@@ -110,8 +133,36 @@ static void np_setup_menu(hwnd_t hwnd) {
     strncpy(edit->items[6].text, "Replace...", sizeof(edit->items[6].text) - 1);
     edit->items[6].command_id = CMD_REPLACE;
 
+    /* Syntax menu */
+    menu_def_t *syntax = &bar.menus[2];
+    strncpy(syntax->title, "Syntax", sizeof(syntax->title) - 1);
+    syntax->accel_key = 0x16; /* HID 'S' */
+    syntax->item_count = 4;
+
+    /* Mark the active syntax with a bullet character */
+    const char *labels[] = { "Plain Text", "C", "C++", "INI" };
+    uint16_t cmds[] = { CMD_SYNTAX_PLAIN, CMD_SYNTAX_C,
+                        CMD_SYNTAX_CPP, CMD_SYNTAX_INI };
+    for (int i = 0; i < 4; i++) {
+        char label_buf[20];
+        if (i == np.syntax_mode) {
+            label_buf[0] = '\xf9'; /* bullet dot */
+            label_buf[1] = ' ';
+            strncpy(label_buf + 2, labels[i], sizeof(label_buf) - 3);
+            label_buf[sizeof(label_buf) - 1] = '\0';
+        } else {
+            label_buf[0] = ' ';
+            label_buf[1] = ' ';
+            strncpy(label_buf + 2, labels[i], sizeof(label_buf) - 3);
+            label_buf[sizeof(label_buf) - 1] = '\0';
+        }
+        strncpy(syntax->items[i].text, label_buf,
+                sizeof(syntax->items[i].text) - 1);
+        syntax->items[i].command_id = cmds[i];
+    }
+
     /* Help menu */
-    menu_def_t *help = &bar.menus[2];
+    menu_def_t *help = &bar.menus[3];
     strncpy(help->title, "Help", sizeof(help->title) - 1);
     help->accel_key = 0x0B; /* HID 'H' */
     help->item_count = 1;
@@ -294,6 +345,8 @@ static void np_do_new(void) {
     textarea_set_text(&np.ta, "", 0);
     np.filepath[0] = '\0';
     np.modified = false;
+    np.syntax_mode = SYNTAX_PLAIN;
+    np_setup_menu(np.hwnd);
     np_update_title();
 }
 
@@ -357,6 +410,550 @@ static void np_blink_callback(TimerHandle_t xTimer) {
 }
 
 /*==========================================================================
+ * Syntax highlighting — tokenizer
+ *=========================================================================*/
+
+/* Color mapping for token types (on white background) */
+static uint8_t tok_color(uint8_t tok) {
+    if (tok == TOK_KEYWORD)  return COLOR_BLUE;
+    if (tok == TOK_TYPE)     return COLOR_CYAN;
+    if (tok == TOK_STRING)   return COLOR_RED;
+    if (tok == TOK_COMMENT)  return COLOR_GREEN;
+    if (tok == TOK_PREPROC)  return COLOR_MAGENTA;
+    if (tok == TOK_NUMBER)   return COLOR_BROWN;
+    if (tok == TOK_SECTION)  return COLOR_BLUE;
+    return COLOR_BLACK;  /* TOK_NORMAL */
+}
+
+static bool syn_is_alnum(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+}
+
+static bool syn_is_digit(char c) {
+    return c >= '0' && c <= '9';
+}
+
+/* Check if word matches any entry in a NULL-terminated list */
+static bool syn_match_word(const char *buf, int32_t start, int32_t end,
+                           const char * const *words) {
+    int32_t wlen = end - start;
+    for (int i = 0; words[i]; i++) {
+        const char *w = words[i];
+        int32_t j = 0;
+        while (j < wlen && w[j] && buf[start + j] == w[j]) j++;
+        if (j == wlen && w[j] == '\0') return true;
+    }
+    return false;
+}
+
+/* C/C++ keywords */
+static const char * const c_keywords[] = {
+    "auto", "break", "case", "const", "continue", "default", "do",
+    "else", "enum", "extern", "for", "goto", "if", "inline",
+    "register", "return", "sizeof", "static", "struct", "switch",
+    "typedef", "union", "volatile", "while", NULL
+};
+
+static const char * const cpp_keywords[] = {
+    "auto", "break", "case", "const", "continue", "default", "do",
+    "else", "enum", "extern", "for", "goto", "if", "inline",
+    "register", "return", "sizeof", "static", "struct", "switch",
+    "typedef", "union", "volatile", "while",
+    "class", "namespace", "template", "typename", "public", "private",
+    "protected", "virtual", "override", "final", "new", "delete",
+    "try", "catch", "throw", "using", "nullptr", "constexpr",
+    "noexcept", "this", "operator", "dynamic_cast", "static_cast",
+    "reinterpret_cast", "const_cast", NULL
+};
+
+/* C/C++ type names */
+static const char * const c_types[] = {
+    "void", "char", "short", "int", "long", "float", "double",
+    "signed", "unsigned", "bool", "true", "false", "NULL",
+    "int8_t", "int16_t", "int32_t", "int64_t",
+    "uint8_t", "uint16_t", "uint32_t", "uint64_t",
+    "size_t", "ssize_t", "ptrdiff_t", "intptr_t", "uintptr_t",
+    "FILE", "UINT", "BOOL", "DWORD", "BYTE", "WORD", NULL
+};
+
+/*
+ * Tokenize a single line of C/C++ code.
+ * tok_out[i] receives the token type for buf[line_start + i].
+ * in_comment: pointer to multi-line comment state (carried across lines).
+ */
+static void syn_tokenize_c(const char *buf, int32_t line_start,
+                            int32_t line_end, uint8_t *tok_out,
+                            bool *in_comment, bool is_cpp) {
+    int32_t len = line_end - line_start;
+    int32_t i = 0;
+
+    /* Default: normal */
+    for (int32_t j = 0; j < len; j++) tok_out[j] = TOK_NORMAL;
+
+    while (i < len) {
+        char c = buf[line_start + i];
+
+        /* Inside multi-line comment */
+        if (*in_comment) {
+            int32_t start = i;
+            while (i < len) {
+                if (buf[line_start + i] == '*' && i + 1 < len &&
+                    buf[line_start + i + 1] == '/') {
+                    i += 2;
+                    *in_comment = false;
+                    break;
+                }
+                i++;
+            }
+            for (int32_t j = start; j < i; j++) tok_out[j] = TOK_COMMENT;
+            continue;
+        }
+
+        /* Single-line comment */
+        if (c == '/' && i + 1 < len && buf[line_start + i + 1] == '/') {
+            for (int32_t j = i; j < len; j++) tok_out[j] = TOK_COMMENT;
+            break;
+        }
+
+        /* Multi-line comment start */
+        if (c == '/' && i + 1 < len && buf[line_start + i + 1] == '*') {
+            int32_t start = i;
+            i += 2;
+            *in_comment = true;
+            while (i < len) {
+                if (buf[line_start + i] == '*' && i + 1 < len &&
+                    buf[line_start + i + 1] == '/') {
+                    i += 2;
+                    *in_comment = false;
+                    break;
+                }
+                i++;
+            }
+            for (int32_t j = start; j < i; j++) tok_out[j] = TOK_COMMENT;
+            continue;
+        }
+
+        /* Preprocessor directive */
+        if (c == '#') {
+            /* Check if first non-space char on line */
+            bool first = true;
+            for (int32_t j = 0; j < i; j++) {
+                char ch = buf[line_start + j];
+                if (ch != ' ' && ch != '\t') { first = false; break; }
+            }
+            if (first) {
+                for (int32_t j = i; j < len; j++) tok_out[j] = TOK_PREPROC;
+                break;
+            }
+        }
+
+        /* String literal */
+        if (c == '"' || c == '\'') {
+            char quote = c;
+            int32_t start = i;
+            i++;
+            while (i < len) {
+                if (buf[line_start + i] == '\\' && i + 1 < len) {
+                    i += 2; /* skip escaped char */
+                    continue;
+                }
+                if (buf[line_start + i] == quote) {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+            for (int32_t j = start; j < i; j++) tok_out[j] = TOK_STRING;
+            continue;
+        }
+
+        /* Number */
+        if (syn_is_digit(c) || (c == '.' && i + 1 < len &&
+            syn_is_digit(buf[line_start + i + 1]))) {
+            /* Check that previous char is not alphanumeric (word boundary) */
+            bool at_boundary = (i == 0) ||
+                !syn_is_alnum(buf[line_start + i - 1]);
+            if (at_boundary) {
+                int32_t start = i;
+                /* Handle 0x hex prefix */
+                if (c == '0' && i + 1 < len &&
+                    (buf[line_start + i + 1] == 'x' ||
+                     buf[line_start + i + 1] == 'X')) {
+                    i += 2;
+                    while (i < len && (syn_is_digit(buf[line_start + i]) ||
+                           (buf[line_start + i] >= 'a' &&
+                            buf[line_start + i] <= 'f') ||
+                           (buf[line_start + i] >= 'A' &&
+                            buf[line_start + i] <= 'F')))
+                        i++;
+                } else {
+                    while (i < len && (syn_is_digit(buf[line_start + i]) ||
+                           buf[line_start + i] == '.'))
+                        i++;
+                }
+                /* Suffix: u, l, f, etc. */
+                while (i < len && (buf[line_start + i] == 'u' ||
+                       buf[line_start + i] == 'U' ||
+                       buf[line_start + i] == 'l' ||
+                       buf[line_start + i] == 'L' ||
+                       buf[line_start + i] == 'f' ||
+                       buf[line_start + i] == 'F'))
+                    i++;
+                for (int32_t j = start; j < i; j++) tok_out[j] = TOK_NUMBER;
+                continue;
+            }
+        }
+
+        /* Identifier / keyword / type */
+        if (syn_is_alnum(c) && !syn_is_digit(c)) {
+            int32_t start = i;
+            while (i < len && syn_is_alnum(buf[line_start + i])) i++;
+
+            const char * const *kw = is_cpp ? cpp_keywords : c_keywords;
+            if (syn_match_word(buf, line_start + start,
+                               line_start + i, kw)) {
+                for (int32_t j = start; j < i; j++)
+                    tok_out[j] = TOK_KEYWORD;
+            } else if (syn_match_word(buf, line_start + start,
+                                       line_start + i, c_types)) {
+                for (int32_t j = start; j < i; j++)
+                    tok_out[j] = TOK_TYPE;
+            }
+            continue;
+        }
+
+        i++;
+    }
+}
+
+/*
+ * Tokenize a single line of INI file.
+ */
+static void syn_tokenize_ini(const char *buf, int32_t line_start,
+                              int32_t line_end, uint8_t *tok_out) {
+    int32_t len = line_end - line_start;
+    for (int32_t j = 0; j < len; j++) tok_out[j] = TOK_NORMAL;
+    if (len == 0) return;
+
+    /* Skip leading whitespace */
+    int32_t i = 0;
+    while (i < len && (buf[line_start + i] == ' ' ||
+           buf[line_start + i] == '\t')) i++;
+    if (i >= len) return;
+
+    char first = buf[line_start + i];
+
+    /* Comment line (;  or #) */
+    if (first == ';' || first == '#') {
+        for (int32_t j = i; j < len; j++) tok_out[j] = TOK_COMMENT;
+        return;
+    }
+
+    /* Section header [section] */
+    if (first == '[') {
+        for (int32_t j = i; j < len; j++) {
+            tok_out[j] = TOK_SECTION;
+            if (buf[line_start + j] == ']') {
+                /* Color any trailing text as normal */
+                break;
+            }
+        }
+        return;
+    }
+
+    /* Key = Value: color the key as keyword, = as normal, value as string */
+    int32_t eq_pos = -1;
+    for (int32_t j = i; j < len; j++) {
+        if (buf[line_start + j] == '=') { eq_pos = j; break; }
+    }
+    if (eq_pos >= 0) {
+        /* Key part */
+        for (int32_t j = i; j < eq_pos; j++) tok_out[j] = TOK_KEYWORD;
+        /* Value part */
+        for (int32_t j = eq_pos + 1; j < len; j++) tok_out[j] = TOK_STRING;
+    }
+}
+
+/*
+ * Detect syntax mode from file extension.
+ */
+static uint8_t np_detect_syntax(const char *path) {
+    if (!path || !path[0]) return SYNTAX_PLAIN;
+
+    /* Find last dot */
+    const char *dot = NULL;
+    const char *p = path;
+    while (*p) {
+        if (*p == '.') dot = p;
+        p++;
+    }
+    if (!dot) return SYNTAX_PLAIN;
+    dot++; /* skip the dot */
+
+    /* Case-insensitive extension match */
+    char ext[8];
+    int i = 0;
+    while (dot[i] && i < 7) {
+        char c = dot[i];
+        if (c >= 'A' && c <= 'Z') c += 32;
+        ext[i] = c;
+        i++;
+    }
+    ext[i] = '\0';
+
+    /* C files */
+    if (ext[0] == 'c' && ext[1] == '\0') return SYNTAX_C;
+    if (ext[0] == 'h' && ext[1] == '\0') return SYNTAX_C;
+
+    /* C++ files */
+    if (ext[0] == 'c' && ext[1] == 'p' && ext[2] == 'p' && ext[3] == '\0')
+        return SYNTAX_CPP;
+    if (ext[0] == 'c' && ext[1] == 'x' && ext[2] == 'x' && ext[3] == '\0')
+        return SYNTAX_CPP;
+    if (ext[0] == 'c' && ext[1] == 'c' && ext[2] == '\0')
+        return SYNTAX_CPP;
+    if (ext[0] == 'h' && ext[1] == 'p' && ext[2] == 'p' && ext[3] == '\0')
+        return SYNTAX_CPP;
+    if (ext[0] == 'h' && ext[1] == 'x' && ext[2] == 'x' && ext[3] == '\0')
+        return SYNTAX_CPP;
+
+    /* INI files */
+    if (ext[0] == 'i' && ext[1] == 'n' && ext[2] == 'i' && ext[3] == '\0')
+        return SYNTAX_INI;
+    if (ext[0] == 'c' && ext[1] == 'f' && ext[2] == 'g' && ext[3] == '\0')
+        return SYNTAX_INI;
+
+    return SYNTAX_PLAIN;
+}
+
+/*==========================================================================
+ * Custom textarea paint with syntax highlighting
+ *
+ * Replicates the kernel's textarea_paint() logic, but applies
+ * per-character foreground colors from the syntax tokenizer.
+ *=========================================================================*/
+
+/* Max characters per line we can highlight (wider lines fall back to normal) */
+#define SYN_MAX_LINE  512
+
+static void np_paint_textarea(textarea_t *ta) {
+    int16_t tx = ta->rect_x;
+    int16_t ty = ta->rect_y;
+    int16_t tw = ta->rect_w;
+    int16_t th = ta->rect_h;
+
+    if (ta->vscroll.visible) tw -= SCROLLBAR_WIDTH;
+    if (ta->hscroll.visible) th -= SCROLLBAR_WIDTH;
+
+    /* White background */
+    wd_fill_rect(tx, ty, tw, th, COLOR_WHITE);
+
+    /* Selection range */
+    int32_t sel_s, sel_e;
+    if (ta->sel_anchor < 0) {
+        sel_s = ta->cursor;
+        sel_e = ta->cursor;
+    } else if (ta->sel_anchor < ta->cursor) {
+        sel_s = ta->sel_anchor;
+        sel_e = ta->cursor;
+    } else {
+        sel_s = ta->cursor;
+        sel_e = ta->sel_anchor;
+    }
+
+    /* Visible line range */
+    int32_t first_line = ta->scroll_y / FONT_UI_HEIGHT;
+    int32_t visible_lines = th / FONT_UI_HEIGHT + 2;
+
+    /* For C/C++ multi-line comment state, we need to scan from the start
+     * up to the first visible line. */
+    bool in_comment = false;
+    uint8_t mode = np.syntax_mode;
+
+    if (mode == SYNTAX_C || mode == SYNTAX_CPP) {
+        /* Quick scan to determine comment state at first_line */
+        int32_t off = 0;
+        int32_t line = 0;
+        while (off < ta->len && line < first_line) {
+            char c = ta->buf[off];
+            if (in_comment) {
+                if (c == '*' && off + 1 < ta->len && ta->buf[off + 1] == '/') {
+                    in_comment = false;
+                    off += 2;
+                    continue;
+                }
+            } else {
+                if (c == '/' && off + 1 < ta->len && ta->buf[off + 1] == '/') {
+                    /* Single-line comment — skip to end of line */
+                    while (off < ta->len && ta->buf[off] != '\n') off++;
+                    if (off < ta->len) { off++; line++; }
+                    continue;
+                }
+                if (c == '/' && off + 1 < ta->len && ta->buf[off + 1] == '*') {
+                    in_comment = true;
+                    off += 2;
+                    continue;
+                }
+                if (c == '"' || c == '\'') {
+                    char q = c;
+                    off++;
+                    while (off < ta->len && ta->buf[off] != '\n') {
+                        if (ta->buf[off] == '\\' && off + 1 < ta->len) {
+                            off += 2; continue;
+                        }
+                        if (ta->buf[off] == q) { off++; break; }
+                        off++;
+                    }
+                    continue;
+                }
+            }
+            if (c == '\n') line++;
+            off++;
+        }
+    }
+
+    /* Walk to first visible line's byte offset */
+    int32_t offset = 0;
+    int32_t cur_line = 0;
+    while (offset < ta->len && cur_line < first_line) {
+        if (ta->buf[offset] == '\n') cur_line++;
+        offset++;
+    }
+
+    /* Token buffer for one line */
+    uint8_t tok_buf[SYN_MAX_LINE];
+
+    /* Draw visible lines */
+    for (int32_t vl = 0; vl < visible_lines && offset <= ta->len; vl++) {
+        int32_t line_num = first_line + vl;
+        int32_t py = ty + line_num * FONT_UI_HEIGHT - ta->scroll_y;
+
+        if (py >= ty + th) break;
+        if (py + FONT_UI_HEIGHT > ty + th) {
+            /* Line extends past text rect bottom — skip to avoid drawing
+             * into the scrollbar area. Still tokenize for comment state. */
+            int32_t ls = offset;
+            while (offset < ta->len && ta->buf[offset] != '\n') offset++;
+            if (mode == SYNTAX_C || mode == SYNTAX_CPP) {
+                int32_t le = offset;
+                int32_t llen = le - ls;
+                if (llen <= SYN_MAX_LINE) {
+                    syn_tokenize_c(ta->buf, ls, le, tok_buf,
+                                   &in_comment, mode == SYNTAX_CPP);
+                }
+            }
+            if (offset < ta->len) offset++;
+            continue;
+        }
+        if (py < ty) {
+            /* Skip line above visible area (but still tokenize for
+             * multi-line comment state tracking) */
+            int32_t ls = offset;
+            while (offset < ta->len && ta->buf[offset] != '\n') offset++;
+            if (mode == SYNTAX_C || mode == SYNTAX_CPP) {
+                int32_t le = offset;
+                int32_t llen = le - ls;
+                if (llen <= SYN_MAX_LINE) {
+                    syn_tokenize_c(ta->buf, ls, le, tok_buf,
+                                   &in_comment, mode == SYNTAX_CPP);
+                }
+            }
+            if (offset < ta->len) offset++;
+            continue;
+        }
+
+        /* Find end of line */
+        int32_t line_start = offset;
+        int32_t line_end = line_start;
+        while (line_end < ta->len && ta->buf[line_end] != '\n') line_end++;
+
+        int32_t line_len = line_end - line_start;
+
+        /* Tokenize the line */
+        if (mode != SYNTAX_PLAIN && line_len > 0 &&
+            line_len <= SYN_MAX_LINE) {
+            if (mode == SYNTAX_C || mode == SYNTAX_CPP) {
+                syn_tokenize_c(ta->buf, line_start, line_end, tok_buf,
+                               &in_comment, mode == SYNTAX_CPP);
+            } else if (mode == SYNTAX_INI) {
+                syn_tokenize_ini(ta->buf, line_start, line_end, tok_buf);
+            }
+        }
+
+        /* Draw characters of this line */
+        int32_t col = 0;
+        for (int32_t i = line_start; i < line_end; i++, col++) {
+            int32_t px = tx + col * FONT_UI_WIDTH - ta->scroll_x;
+
+            if (px + FONT_UI_WIDTH <= tx) continue;
+            if (px >= tx + tw) break;
+
+            bool in_sel = (sel_s != sel_e && i >= sel_s && i < sel_e);
+            uint8_t fg, bg;
+            if (in_sel) {
+                fg = COLOR_WHITE;
+                bg = COLOR_BLUE;
+            } else {
+                bg = COLOR_WHITE;
+                if (mode != SYNTAX_PLAIN && line_len <= SYN_MAX_LINE) {
+                    fg = tok_color(tok_buf[i - line_start]);
+                } else {
+                    fg = COLOR_BLACK;
+                }
+            }
+
+            wd_char_ui(px, py, ta->buf[i], fg, bg);
+        }
+
+        /* Selection highlight for trailing newline */
+        if (sel_s != sel_e) {
+            if (line_end >= sel_s && line_end < sel_e && line_end < ta->len) {
+                int32_t end_px = tx + col * FONT_UI_WIDTH - ta->scroll_x;
+                if (end_px < tx + tw) {
+                    wd_fill_rect(end_px, py,
+                                 FONT_UI_WIDTH, FONT_UI_HEIGHT, COLOR_BLUE);
+                }
+            }
+        }
+
+        /* Advance past newline */
+        offset = line_end;
+        if (offset < ta->len) offset++;
+    }
+
+    /* Draw cursor */
+    if (ta->cursor_visible) {
+        /* Compute cursor line and column */
+        int32_t cline = 0, ccol = 0;
+        for (int32_t i = 0; i < ta->cursor && i < ta->len; i++) {
+            if (ta->buf[i] == '\n') { cline++; ccol = 0; }
+            else ccol++;
+        }
+        int32_t cx = tx + ccol * FONT_UI_WIDTH - ta->scroll_x;
+        int32_t cy = ty + cline * FONT_UI_HEIGHT - ta->scroll_y;
+
+        if (cx >= tx && cx < tx + tw &&
+            cy >= ty && cy + FONT_UI_HEIGHT <= ty + th) {
+            for (int r = 0; r < FONT_UI_HEIGHT; r++) {
+                wd_pixel(cx, cy + r, COLOR_BLACK);
+            }
+        }
+    }
+
+    /* Draw scrollbars */
+    scrollbar_paint(&ta->vscroll);
+    scrollbar_paint(&ta->hscroll);
+
+    /* Corner box if both scrollbars visible */
+    if (ta->vscroll.visible && ta->hscroll.visible) {
+        wd_fill_rect(ta->rect_x + ta->rect_w - SCROLLBAR_WIDTH,
+                     ta->rect_y + ta->rect_h - SCROLLBAR_WIDTH,
+                     SCROLLBAR_WIDTH, SCROLLBAR_WIDTH, THEME_BUTTON_FACE);
+    }
+}
+
+/*==========================================================================
  * Event handler (must use if/else if chains, no switch)
  *=========================================================================*/
 
@@ -381,7 +978,17 @@ static bool np_event(hwnd_t hwnd, const window_event_t *event) {
     }
 
     else if (event->type == WM_SETFOCUS) {
-        /* Ensure textarea repaints when focus returns (e.g. after dialog) */
+        /* Restart cursor blink and repaint when focus returns */
+        np.ta.cursor_visible = true;
+        if (np.blink_timer) xTimerStart(np.blink_timer, 0);
+        wm_invalidate(np.hwnd);
+        return true;
+    }
+
+    else if (event->type == WM_KILLFOCUS) {
+        /* Stop cursor blink when window loses focus */
+        if (np.blink_timer) xTimerStop(np.blink_timer, 0);
+        np.ta.cursor_visible = false;
         wm_invalidate(np.hwnd);
         return true;
     }
@@ -458,12 +1065,40 @@ static bool np_event(hwnd_t hwnd, const window_event_t *event) {
             return true;
         }
 
+        /* Syntax menu commands */
+        else if (cmd == CMD_SYNTAX_PLAIN) {
+            np.syntax_mode = SYNTAX_PLAIN;
+            np_setup_menu(np.hwnd);
+            wm_invalidate(np.hwnd);
+            return true;
+        }
+        else if (cmd == CMD_SYNTAX_C) {
+            np.syntax_mode = SYNTAX_C;
+            np_setup_menu(np.hwnd);
+            wm_invalidate(np.hwnd);
+            return true;
+        }
+        else if (cmd == CMD_SYNTAX_CPP) {
+            np.syntax_mode = SYNTAX_CPP;
+            np_setup_menu(np.hwnd);
+            wm_invalidate(np.hwnd);
+            return true;
+        }
+        else if (cmd == CMD_SYNTAX_INI) {
+            np.syntax_mode = SYNTAX_INI;
+            np_setup_menu(np.hwnd);
+            wm_invalidate(np.hwnd);
+            return true;
+        }
+
         /* Dialog results */
         else if (cmd == DLG_RESULT_FILE) {
             /* Open dialog returned a file */
             const char *path = file_dialog_get_path();
             if (path && path[0]) {
                 np_load_file(path);
+                np.syntax_mode = np_detect_syntax(np.filepath);
+                np_setup_menu(np.hwnd);
             }
             wm_invalidate(np.hwnd);
             return true;
@@ -473,6 +1108,8 @@ static bool np_event(hwnd_t hwnd, const window_event_t *event) {
             const char *path = file_dialog_get_path();
             if (path && path[0]) {
                 np_save_file(path);
+                np.syntax_mode = np_detect_syntax(np.filepath);
+                np_setup_menu(np.hwnd);
             }
             /* If there's a pending action (from "Save changes?" → Yes → Save As),
              * resume it now that the file has been saved */
@@ -633,7 +1270,7 @@ static bool np_event(hwnd_t hwnd, const window_event_t *event) {
 
 static void np_paint(hwnd_t hwnd) {
     wd_begin(hwnd);
-    textarea_paint(&np.ta);
+    np_paint_textarea(&np.ta);
     wd_end();
 }
 
@@ -681,6 +1318,7 @@ int main(int argc, char **argv) {
     np.filepath[0] = '\0';
     np.modified = false;
     np.pending_action = PENDING_NONE;
+    np.syntax_mode = SYNTAX_PLAIN;
 
     /* Start cursor blink timer */
     np.blink_timer = xTimerCreate("npblink", pdMS_TO_TICKS(500),
@@ -694,6 +1332,8 @@ int main(int argc, char **argv) {
     /* If a file path was passed as argument, open it */
     if (argc > 1 && argv[1] && argv[1][0]) {
         np_load_file(argv[1]);
+        np.syntax_mode = np_detect_syntax(np.filepath);
+        np_setup_menu(np.hwnd);
     }
 
     dbg_printf("[notepad] started\n");

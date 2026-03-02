@@ -446,10 +446,12 @@ void wm_set_focus(hwnd_t hwnd) {
     hwnd_t modal = wm_get_modal();
     if (modal != HWND_NULL && hwnd != modal) return;
 
+    hwnd_t old_focus = focus_hwnd;
+
     /* Remove focus from old window — title bar changes color */
-    if (valid_hwnd(focus_hwnd)) {
-        windows[focus_hwnd - 1].flags &= ~WF_FOCUSED;
-        windows[focus_hwnd - 1].flags |= WF_DIRTY | WF_FRAME_DIRTY;
+    if (valid_hwnd(old_focus)) {
+        windows[old_focus - 1].flags &= ~WF_FOCUSED;
+        windows[old_focus - 1].flags |= WF_DIRTY | WF_FRAME_DIRTY;
     }
 
     focus_hwnd = hwnd;
@@ -473,6 +475,22 @@ void wm_set_focus(hwnd_t hwnd) {
         for (uint8_t i = 0; i < z_count; i++) {
             windows[z_stack[i] - 1].z_order = i;
         }
+    }
+
+    /* Notify old window that it lost focus */
+    if (valid_hwnd(old_focus)) {
+        window_event_t ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.type = WM_KILLFOCUS;
+        wm_post_event(old_focus, &ev);
+    }
+
+    /* Notify new window that it gained focus */
+    if (valid_hwnd(hwnd)) {
+        window_event_t ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.type = WM_SETFOCUS;
+        wm_post_event(hwnd, &ev);
     }
 
     taskbar_invalidate();

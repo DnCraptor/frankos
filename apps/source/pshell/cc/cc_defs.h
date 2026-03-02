@@ -198,6 +198,77 @@ static const struct define_grp irq_defines[] = {{0}};
 static const struct define_grp uart_defines[] = {{0}};
 static const struct define_grp adc_defines[] = {{0}};
 
+static const struct define_grp frankos_defines[] = {
+    // Window events
+    {"WM_NULL", 0}, {"WM_CREATE", 1}, {"WM_DESTROY", 2}, {"WM_CLOSE", 3},
+    {"WM_PAINT", 4}, {"WM_SETFOCUS", 5}, {"WM_KILLFOCUS", 6},
+    {"WM_MOVE", 7}, {"WM_SIZE", 8},
+    {"WM_MINIMIZE", 9}, {"WM_MAXIMIZE", 10}, {"WM_RESTORE", 11},
+    {"WM_KEYDOWN", 12}, {"WM_KEYUP", 13}, {"WM_CHAR", 14},
+    {"WM_MOUSEMOVE", 15},
+    {"WM_LBUTTONDOWN", 16}, {"WM_LBUTTONUP", 17},
+    {"WM_RBUTTONDOWN", 18}, {"WM_RBUTTONUP", 19},
+    {"WM_TIMER", 20}, {"WM_COMMAND", 21}, {"WM_DROPFILES", 22},
+    // Modifier keys
+    {"KMOD_SHIFT", 1}, {"KMOD_CTRL", 2}, {"KMOD_ALT", 4},
+    // Colors (CGA 16-color)
+    {"COLOR_BLACK", 0}, {"COLOR_BLUE", 1}, {"COLOR_GREEN", 2},
+    {"COLOR_CYAN", 3}, {"COLOR_RED", 4}, {"COLOR_MAGENTA", 5},
+    {"COLOR_BROWN", 6}, {"COLOR_LIGHT_GRAY", 7}, {"COLOR_DARK_GRAY", 8},
+    {"COLOR_LIGHT_BLUE", 9}, {"COLOR_LIGHT_GREEN", 10},
+    {"COLOR_LIGHT_CYAN", 11}, {"COLOR_LIGHT_RED", 12},
+    {"COLOR_LIGHT_MAGENTA", 13}, {"COLOR_YELLOW", 14}, {"COLOR_WHITE", 15},
+    // Window flags
+    {"WF_ALIVE", 1<<0}, {"WF_VISIBLE", 1<<1}, {"WF_FOCUSED", 1<<2},
+    {"WF_CLOSABLE", 1<<3}, {"WF_RESIZABLE", 1<<4}, {"WF_MOVABLE", 1<<5},
+    {"WF_BORDER", 1<<6}, {"WF_DIRTY", 1<<7}, {"WF_MENUBAR", 1<<8},
+    // Window style presets
+    {"WSTYLE_DEFAULT", (1<<3)|(1<<4)|(1<<5)|(1<<6)},
+    {"WSTYLE_DIALOG", (1<<3)|(1<<5)|(1<<6)},
+    {"WSTYLE_POPUP", 0},
+    // Window state
+    {"WS_NORMAL", 0}, {"WS_MINIMIZED", 1}, {"WS_MAXIMIZED", 2},
+    // Window handle
+    {"HWND_NULL", 0}, {"WM_MAX_WINDOWS", 16},
+    // Dialog icons
+    {"DLG_ICON_NONE", 0}, {"DLG_ICON_INFO", 1},
+    {"DLG_ICON_WARNING", 2}, {"DLG_ICON_ERROR", 3},
+    // Dialog buttons
+    {"DLG_BTN_OK", 1<<0}, {"DLG_BTN_CANCEL", 1<<1},
+    {"DLG_BTN_YES", 1<<2}, {"DLG_BTN_NO", 1<<3},
+    // Dialog results
+    {"DLG_RESULT_OK", 0xFF01}, {"DLG_RESULT_CANCEL", 0xFF02},
+    {"DLG_RESULT_YES", 0xFF03}, {"DLG_RESULT_NO", 0xFF04},
+    {"DLG_RESULT_INPUT", 0xFF10},
+    {"DLG_RESULT_FILE", 0xFF20}, {"DLG_RESULT_FILE_SAVE", 0xFF21},
+    {"DLG_RESULT_FIND_NEXT", 0xFF31}, {"DLG_RESULT_REPLACE", 0xFF32},
+    {"DLG_RESULT_REPLACE_ALL", 0xFF33},
+    // Display
+    {"DISPLAY_WIDTH", 640}, {"DISPLAY_HEIGHT", 480},
+    {"TASKBAR_HEIGHT", 28},
+    // Theme
+    {"THEME_TITLE_HEIGHT", 20}, {"THEME_BORDER_WIDTH", 4},
+    {"THEME_MENU_HEIGHT", 20}, {"THEME_BUTTON_FACE", 7},
+    // Font
+    {"FONT_UI_WIDTH", 6}, {"FONT_UI_HEIGHT", 12},
+    // Menu
+    {"MENU_MAX_ITEMS", 8}, {"MENU_MAX_MENUS", 4},
+    {"MIF_SEPARATOR", 1<<0}, {"MIF_DISABLED", 1<<1},
+    // Scrollbar
+    {"SCROLLBAR_WIDTH", 16},
+    // Textarea
+    {"TEXTAREA_MAX_SIZE", 32768},
+    // FreeRTOS timer commands
+    {"TMR_CMD_START", 1}, {"TMR_CMD_STOP", 3},
+    {"TMR_CMD_CHANGE_PERIOD", 4}, {"TMR_CMD_DELETE", 5},
+    // FreeRTOS
+    {"pdTRUE", 1}, {"pdFALSE", 0},
+    {"portMAX_DELAY", 0xFFFFFFFF},
+    // M_PI for math
+    {"M_PI_I", 3},
+    {0}
+};
+
 #endif /* PSHELL_FRANKOS */
 
 static const struct define_grp math_defines[] = {{0}};

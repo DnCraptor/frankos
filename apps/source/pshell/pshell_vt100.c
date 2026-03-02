@@ -61,6 +61,10 @@ static bool     csi_private;   /* '?' prefix in CSI sequence (DEC private) */
 static volatile bool cursor_visible;
 static volatile bool cursor_enabled;  /* DEC private mode ?25h/?25l */
 
+/* Active (has focus) flag — when false, flush_display() skips direct
+ * framebuffer writes so pshell doesn't paint over other windows. */
+static volatile bool vt_active = true;
+
 /* Window handle for invalidation */
 static hwnd_t   g_vt_hwnd;
 
@@ -153,6 +157,12 @@ static inline void render_cell(uint8_t *fb, int16_t stride,
  * Called from getch (natural end-of-output-burst) and cursor blink timer. */
 static void flush_display(void) {
     if (!vt_dirty || g_vt_hwnd == 0) return;
+
+    /* When inactive (no focus), keep vt_dirty set but don't write to
+     * the framebuffer — the next vt100_paint() or refocus will pick
+     * up the pending changes. */
+    if (!vt_active) return;
+
     vt_dirty = false;
 
     uint8_t *fb = cached_fb;
@@ -702,12 +712,26 @@ void vt100_invalidate(void) {
  * ═════════════════════════════════════════════════════════════════════════ */
 
 void vt100_toggle_cursor(void) {
+    if (!vt_active) return;          /* no-op when unfocused */
     cursor_visible = !cursor_visible;
     /* Mark dirty so flush_display() re-evaluates the cursor cell
      * (shadow has old cursor state → comparison fails → cell re-rendered).
      * Also flushes any pending text output. */
     vt_dirty = true;
     flush_display();
+}
+
+void vt100_set_active(bool active) {
+    vt_active = active;
+    if (active) {
+        /* Force full repaint on next paint — shadow mismatch redraws everything */
+        vt100_invalidate();
+    } else {
+        /* Null out the cached framebuffer pointer so even a racing
+         * flush_display() from the shell task cannot write to the
+         * screen while we don't own it. */
+        cached_fb = NULL;
+    }
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
@@ -735,11 +759,15 @@ void vt100_paint(hwnd_t hwnd) {
     int16_t clip_w, clip_h;
     wd_get_clip_size(&clip_w, &clip_h);
 
-    /* Cache framebuffer info for direct access from shell/timer tasks */
-    cached_fb      = dst;
-    cached_stride  = stride;
-    cached_clip_w  = clip_w;
-    cached_clip_h  = clip_h;
+    /* Cache framebuffer info for direct access from shell/timer tasks.
+     * Only cache when active (has focus) — otherwise the shell task
+     * must not write to the display behind other windows. */
+    if (vt_active) {
+        cached_fb      = dst;
+        cached_stride  = stride;
+        cached_clip_w  = clip_w;
+        cached_clip_h  = clip_h;
+    }
 
     int vis_cols = tb_cols;
     int vis_rows = tb_rows;

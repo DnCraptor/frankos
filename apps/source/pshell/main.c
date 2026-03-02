@@ -21,10 +21,11 @@
 #define CMD_ABOUT   200
 
 /* ── App state ────────────────────────────────────────────────────────── */
-static hwnd_t         g_hwnd     = 0;
-static TaskHandle_t   g_main_task = NULL;
+static hwnd_t         g_hwnd      = 0;
+static TaskHandle_t   g_main_task  = NULL;
 static TaskHandle_t   g_shell_task = NULL;
-static volatile bool  g_closing  = false;
+static volatile bool  g_closing    = false;
+static TimerHandle_t  g_blink_tmr  = NULL;
 
 /* Forward declaration of the pshell entry point (in shell.c) */
 extern int pshell_main(void);
@@ -111,8 +112,20 @@ static bool pshell_event(hwnd_t hwnd, const window_event_t *event) {
     }
 
     if (event->type == WM_SETFOCUS) {
-        vt100_invalidate();
-        wm_invalidate(hwnd);
+        vt100_set_active(true);                   /* re-enable FB writes */
+        /* Resume the shell task so it can process I/O again */
+        if (g_shell_task) vTaskResume(g_shell_task);
+        if (g_blink_tmr) xTimerStart(g_blink_tmr, 0);
+        wm_invalidate(hwnd);                      /* trigger full repaint */
+        return true;
+    }
+
+    if (event->type == WM_KILLFOCUS) {
+        if (g_blink_tmr) xTimerStop(g_blink_tmr, 0);
+        vt100_set_active(false);                  /* suppress FB writes */
+        /* Suspend the shell task so it cannot write to the framebuffer
+         * while another window is in the foreground. */
+        if (g_shell_task) vTaskSuspend(g_shell_task);
         return true;
     }
 
@@ -274,11 +287,11 @@ int main(int argc, char **argv) {
     taskbar_invalidate();
 
     /* Start cursor blink timer (500 ms, auto-reload) */
-    TimerHandle_t blink_tmr = xTimerCreate("pshBlink",
-                                            pdMS_TO_TICKS(500),
-                                            pdTRUE, NULL, blink_cb);
-    if (blink_tmr)
-        xTimerStart(blink_tmr, 0);
+    g_blink_tmr = xTimerCreate("pshBlink",
+                                pdMS_TO_TICKS(500),
+                                pdTRUE, NULL, blink_cb);
+    if (g_blink_tmr)
+        xTimerStart(g_blink_tmr, 0);
 
     /* Start shell in a separate task (4K words = 16KB stack).
      * Keep this lean — FreeRTOS heap is only 128KB and cc needs ~82KB. */
@@ -295,9 +308,10 @@ int main(int argc, char **argv) {
     /* Tear down — use portMAX_DELAY so timer stop/delete fully complete
      * before we return (the callback is a function pointer into ELF code;
      * a pending timer fire after ELF unload causes a jump into freed memory). */
-    if (blink_tmr) {
-        xTimerStop(blink_tmr, portMAX_DELAY);
-        xTimerDelete(blink_tmr, portMAX_DELAY);
+    if (g_blink_tmr) {
+        xTimerStop(g_blink_tmr, portMAX_DELAY);
+        xTimerDelete(g_blink_tmr, portMAX_DELAY);
+        g_blink_tmr = NULL;
     }
 
     /* Force-delete shell task only if it hasn't already self-deleted.
