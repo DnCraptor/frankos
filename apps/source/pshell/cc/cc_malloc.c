@@ -22,7 +22,7 @@ static qentry_t malloc_list UDATA; // list of allocated memory blocks
 
 #ifdef PSHELL_FRANKOS
 void cc_malloc_reset(void) {
-    memset(&malloc_list, 0, sizeof(malloc_list));
+    cc_free_all();
 }
 #endif
 

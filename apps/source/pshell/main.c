@@ -12,6 +12,7 @@
 #undef switch
 #include "frankos-app.h"
 #include "pshell_vt100.h"
+#include "cc/cc.h"
 
 #include <string.h>
 #include <stdbool.h>
@@ -321,6 +322,9 @@ int main(int argc, char **argv) {
         vTaskDelete(g_shell_task);
         g_shell_task = NULL;
     }
+
+    /* Free cc's persistent code/data buffer before ELF unload */
+    cc_cleanup();
 
     wm_destroy_window(g_hwnd);
     g_hwnd = 0;

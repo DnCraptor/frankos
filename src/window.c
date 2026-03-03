@@ -245,6 +245,13 @@ void wm_destroy_window(hwnd_t hwnd) {
     /* Expose the area this window occupied */
     wm_add_expose_rect(&win->frame);
 
+    /* Unregister from the swap system BEFORE clearing the window slot.
+     * This also clears active_fg if this was the foreground app, so
+     * swap_switch_to(new_focus) below can properly resume the
+     * previous app (restoring its stack and clearing WF_SUSPENDED). */
+    bool was_swap_fg = (swap_get_foreground() == hwnd);
+    swap_unregister(hwnd);
+
     /* Remove from z-stack */
     for (uint8_t i = 0; i < z_count; i++) {
         if (z_stack[i] == hwnd) {
@@ -261,13 +268,18 @@ void wm_destroy_window(hwnd_t hwnd) {
         windows[z_stack[i] - 1].z_order = i;
     }
 
-    /* Transfer focus to next top window if this was focused */
+    /* Transfer focus to next top window if this was focused.
+     * Must dispatch WM_SETFOCUS so the receiving app can resume its
+     * task / restart timers (e.g. pshell cursor blink).  Without this,
+     * an app that suspends its task on WM_KILLFOCUS would stay frozen
+     * forever after the overlapping window is destroyed. */
+    hwnd_t new_focus = HWND_NULL;
     if (focus_hwnd == hwnd) {
         focus_hwnd = HWND_NULL;
         if (z_count > 0) {
-            hwnd_t next = z_stack[z_count - 1];
-            focus_hwnd = next;
-            windows[next - 1].flags |= WF_FOCUSED | WF_DIRTY | WF_FRAME_DIRTY;
+            new_focus = z_stack[z_count - 1];
+            focus_hwnd = new_focus;
+            windows[new_focus - 1].flags |= WF_FOCUSED | WF_DIRTY | WF_FRAME_DIRTY;
         } else if (desktop_has_shortcuts()) {
             desktop_focus();
         }
@@ -276,6 +288,22 @@ void wm_destroy_window(hwnd_t hwnd) {
     memset(win, 0, sizeof(*win));
     fs_state[hwnd - 1].active = false;
     taskbar_invalidate();
+
+    /* Post WM_SETFOCUS after the window slot is cleared — the handler
+     * may call wm_get_window() and we need a consistent state. */
+    if (new_focus != HWND_NULL) {
+        window_event_t ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.type = WM_SETFOCUS;
+        wm_post_event(new_focus, &ev);
+
+        /* If the destroyed window was the swap foreground, switch to
+         * the new focus window so the swap system properly resumes it
+         * (restores shared stack from PSRAM, clears WF_SUSPENDED).
+         * Without this, keyboard events are blocked by WF_SUSPENDED. */
+        if (was_swap_fg)
+            swap_switch_to(new_focus);
+    }
 }
 
 void wm_show_window(hwnd_t hwnd) {
@@ -297,21 +325,22 @@ void wm_minimize_window(hwnd_t hwnd) {
     windows[hwnd - 1].flags &= ~WF_VISIBLE;
     wm_add_expose_rect(&frame);
 
-    /* If minimizing the focused window, try to focus next visible window;
-     * if none remain, focus the desktop. */
+    /* If minimizing the focused window, move focus to the next visible
+     * window via wm_set_focus() so WM_KILLFOCUS is properly dispatched
+     * to the minimized window (stopping timers, framebuffer writes, etc.) */
     if (focus_hwnd == hwnd) {
-        focus_hwnd = HWND_NULL;
-        windows[hwnd - 1].flags &= ~WF_FOCUSED;
         /* Find topmost visible non-minimized window */
+        hwnd_t next = HWND_NULL;
         for (int i = z_count - 1; i >= 0; i--) {
             hwnd_t h = z_stack[i];
             if (valid_hwnd(h) &&
                 (windows[h - 1].flags & WF_VISIBLE) &&
                 windows[h - 1].state != WS_MINIMIZED) {
-                wm_set_focus(h);
+                next = h;
                 break;
             }
         }
+        wm_set_focus(next);
         if (focus_hwnd == HWND_NULL && desktop_has_shortcuts()) {
             desktop_focus();
         }

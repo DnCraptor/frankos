@@ -14,6 +14,9 @@
 int cc(int mode, int argc, char* argv[]);
 
 #ifdef PSHELL_FRANKOS
+/* Free the persistent code/data buffer allocated by cc().
+ * Must be called before pshell exits to avoid memory leaks. */
+void cc_cleanup(void);
 #define UDATA
 #else
 #define UDATA __attribute__((section(".ccudata")))

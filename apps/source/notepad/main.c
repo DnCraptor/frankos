@@ -146,7 +146,7 @@ static void np_setup_menu(hwnd_t hwnd) {
     for (int i = 0; i < 4; i++) {
         char label_buf[20];
         if (i == np.syntax_mode) {
-            label_buf[0] = '\xf9'; /* bullet dot */
+            label_buf[0] = '*';
             label_buf[1] = ' ';
             strncpy(label_buf + 2, labels[i], sizeof(label_buf) - 3);
             label_buf[sizeof(label_buf) - 1] = '\0';

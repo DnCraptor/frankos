@@ -490,12 +490,50 @@ static float wrap_atan2f(float y, float x) {
 }
 
 // GUI wrappers — call through sys_table for FRANK OS windowed API
+
+// Callback trampolines: bridge ARM ABI (params in r0-r3) → cc ABI (params on stack).
+// cc functions expect params pushed on the caller's stack (above [r7+8] in callee).
+// The WM calls callbacks with params in registers. Trampolines push register params
+// onto the stack, then call the cc function. Written into cc's code buffer (executable).
+static uint16_t* _emit_tramp(uint16_t* t, void* target, int n_params) {
+    *t++ = 0xb500; // push {lr}
+    // Push params: r0 first (deepest), then r1 — matches cc's stack order
+    for (int p = 0; p < n_params; p++)
+        *t++ = 0xb400 | (1 << p); // push {rp}
+    // Load target address (with Thumb bit) into r3 via movw/movt
+    uint32_t addr = (uint32_t)target | 1;
+    uint32_t lo = addr & 0xFFFF;
+    uint32_t hi = (addr >> 16) & 0xFFFF;
+    *t++ = 0xf240 | (((lo >> 11) & 1) << 10) | ((lo >> 12) & 0xf);
+    *t++ = (((lo >> 8) & 7) << 12) | (3 << 8) | (lo & 0xff);
+    *t++ = 0xf2c0 | (((hi >> 11) & 1) << 10) | ((hi >> 12) & 0xf);
+    *t++ = (((hi >> 8) & 7) << 12) | (3 << 8) | (hi & 0xff);
+    *t++ = 0x4798; // blx r3
+    *t++ = 0xb000 | n_params; // add sp, #n_params*4
+    *t++ = 0xbd00; // pop {pc}
+    return t;
+}
+
 // Window manager
 static int wrap_wm_create_window(int x, int y, int w, int h,
                                  char* title, int style,
                                  void* event_cb, void* paint_cb) {
+    // Build trampolines in the cc code buffer (guaranteed executable RAM)
+    uint16_t *tramp_event = NULL, *tramp_paint = NULL;
+    uint16_t *t = e + 1;
+    if (event_cb) {
+        tramp_event = t;
+        t = _emit_tramp(t, event_cb, 2);
+    }
+    if (paint_cb) {
+        tramp_paint = t;
+        t = _emit_tramp(t, paint_cb, 1);
+    }
+    __asm volatile("dsb\n isb"); // flush pipeline for new code
     return ((int (*)(int, int, int, int, char*, int, void*, void*))SYS(404))(
-        x, y, w, h, title, style, event_cb, paint_cb);
+        x, y, w, h, title, style,
+        tramp_event ? (void*)((uint32_t)tramp_event | 1) : 0,
+        tramp_paint ? (void*)((uint32_t)tramp_paint | 1) : 0);
 }
 static void wrap_wm_destroy_window(int hwnd) {
     ((void (*)(int))SYS(405))(hwnd);
@@ -3203,15 +3241,41 @@ static void emit_syscall(int n, int np) {
         return;
 #endif
     } else {
-        int nparm = np & ADJ_MASK;
-        if (nparm > 4)
-            nparm = 4;
-        while (nparm--)
-            emit_pop(nparm);
+        int total = np & ADJ_MASK;
+        // Load function address into r12 before touching r0-r3
         if (!ofn)
             emit_load_long_imm(3, (int)p->extrn, 1);
         else
             emit_load_long_imm(3, n, 1);
+        emit(0x469c); // mov r12, r3
+        if (total <= 4) {
+            // Simple case: pop all params into r0-r3
+            int nparm = total;
+            while (nparm--)
+                emit_pop(nparm);
+            emit(0x47e0); // blx r12
+        } else {
+            // >4 params: stack has nth(top)..1st(bottom).
+            // ARM needs r0-r3 = args 1-4, stack [sp+0]=5th ascending.
+            int stk = total - 4;
+            // Step 1: reverse top 'stk' entries so stack args are in order
+            for (int i = 0; i < stk / 2; i++) {
+                int lo = i, hi = stk - 1 - i;
+                emit(0x9800 | lo);               // ldr r0, [sp, #lo*4]
+                emit(0x9800 | (1 << 8) | hi);   // ldr r1, [sp, #hi*4]
+                emit(0x9000 | (1 << 8) | lo);   // str r1, [sp, #lo*4]
+                emit(0x9000 | hi);               // str r0, [sp, #hi*4]
+            }
+            // Step 2: load register args from bottom of stack
+            emit(0x9800 | (total - 1));              // ldr r0, [sp, #(1st)]
+            emit(0x9800 | (1 << 8) | (total - 2));  // ldr r1, [sp, #(2nd)]
+            emit(0x9800 | (2 << 8) | (total - 3));  // ldr r2, [sp, #(3rd)]
+            emit(0x9800 | (3 << 8) | (total - 4));  // ldr r3, [sp, #(4th)]
+            emit(0x47e0); // blx r12
+            // Clean up all entries (none were popped, all still on stack)
+            emit_adjust_stack(total);
+        }
+        return;
     }
     emit(0x4798); // blx r3
     int nparm = np & ADJ_MASK;
@@ -4677,6 +4741,7 @@ int cc(int mode, int argc, char** argv) {
 
         // add SDK and clib symbols
         add_defines(stdio_defines);
+#ifndef PSHELL_FRANKOS
         add_defines(gpio_defines);
         add_defines(pwm_defines);
         add_defines(clk_defines);
@@ -4684,6 +4749,9 @@ int cc(int mode, int argc, char** argv) {
         add_defines(spi_defines);
         add_defines(irq_defines);
         add_defines(uart_defines);
+#else
+        add_defines(frankos_defines);
+#endif
 
         // make a copy of the full path and append .c if necessary
         char* fn = cc_malloc(strlen(full_path(*argv)) + 3, 1, 1);
@@ -4904,3 +4972,13 @@ done: // clean up and return
 
     return rslt;
 }
+
+#ifdef PSHELL_FRANKOS
+void cc_cleanup(void) {
+    cc_free_all();
+    if (__StackLimit) {
+        free(__StackLimit);
+        __StackLimit = NULL;
+    }
+}
+#endif
