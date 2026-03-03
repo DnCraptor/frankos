@@ -1081,6 +1081,47 @@ static bool run_as_cmd(const char* dir) {
 }
 
 #ifdef PSHELL_FRANKOS
+
+/* Executable mode: run a cc-compiled binary and return.
+ * Called from main.c when pshell is launched with a file argument. */
+int pshell_exec(const char *file) {
+    int cols, rows;
+    vt100_get_size(&cols, &rows);
+    screen_x = (uint32_t)cols;
+    screen_y = (uint32_t)rows;
+    mounted = true;
+
+    printf(VT_CLEAR);
+
+    /* Try compiling from source if available.
+     * The cc binary format embeds absolute data addresses, so loading
+     * a binary compiled by a different pshell instance would crash.
+     * Recompiling from source avoids this entirely. */
+    char src[260];
+    snprintf(src, sizeof(src), "%s.c", file);
+    struct lfs_info info;
+    if (fs_stat(src, &info) == LFS_ERR_OK) {
+        /* cc(0,...) skips argv[0] (the "cc" command name), so pass
+         * the source file as argv[1]. */
+        argc = 2;
+        argv[0] = "cc";
+        argv[1] = src;
+        cc(0, argc, argv);
+    } else {
+        argc = 1;
+        argv[0] = (char *)file;
+        cc(1, argc, argv);
+    }
+    cc_cleanup();
+
+    /* Wait for a keypress before closing */
+    printf("\n" VT_BOLD "Press any key to close..." VT_NORMAL);
+    fflush(stdout);
+    getchar();
+
+    return 0;
+}
+
 // FRANK OS entry point (called from main.c shell worker task)
 int pshell_main(void) {
     int cols, rows;

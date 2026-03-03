@@ -84,13 +84,25 @@ static const char *path_ext(const char *path) {
     return dot + 1;
 }
 
-/* Check if path is an ELF app (has .inf companion) */
+/* Check if path is an app (has .inf or .xa1 companion) */
 static bool is_app_path(const char *path) {
     if (path[0] == ':') return true;   /* built-in apps */
-    char inf[DESKTOP_PATH_MAX + 4];
-    snprintf(inf, sizeof(inf), "%s.inf", path);
+    char chk[DESKTOP_PATH_MAX + 4];
     FILINFO fi;
-    return f_stat(inf, &fi) == FR_OK;
+    snprintf(chk, sizeof(chk), "%s.inf", path);
+    if (f_stat(chk, &fi) == FR_OK) return true;
+    snprintf(chk, sizeof(chk), "%s.xa1", path);
+    return f_stat(chk, &fi) == FR_OK;
+}
+
+/* Check if path is a cc-compiled executable (.xa1 companion, no .inf) */
+static bool is_cc_executable(const char *path) {
+    char chk[DESKTOP_PATH_MAX + 4];
+    FILINFO fi;
+    snprintf(chk, sizeof(chk), "%s.inf", path);
+    if (f_stat(chk, &fi) == FR_OK) return false;  /* ELF app */
+    snprintf(chk, sizeof(chk), "%s.xa1", path);
+    return f_stat(chk, &fi) == FR_OK;
 }
 
 /* Load icon from .inf file or use default */
@@ -473,6 +485,26 @@ static void dt_show_context_menu(int16_t sx, int16_t sy, bool on_shortcut) {
     menu_popup_show(HWND_NULL, sx, sy, items, count);
 }
 
+/* Launch a desktop shortcut: built-in, ELF app, cc executable, or file */
+static void dt_launch_shortcut(desktop_shortcut_t *sc) {
+    if (sc->is_app) {
+        if (strcmp(sc->path, DESKTOP_BUILTIN_NAVIGATOR) == 0) {
+            spawn_filemanager_window();
+        } else if (strcmp(sc->path, DESKTOP_BUILTIN_TERMINAL) == 0) {
+            extern void spawn_terminal_window(void);
+            spawn_terminal_window();
+        } else if (is_cc_executable(sc->path)) {
+            launch_elf_app_with_file("/fos/pshell", sc->path);
+        } else {
+            if (sc->has_icon)
+                wm_set_pending_icon(sc->icon);
+            launch_elf_app(sc->path);
+        }
+    } else {
+        file_assoc_open(sc->path);
+    }
+}
+
 /*==========================================================================
  * Mouse handling
  *=========================================================================*/
@@ -517,21 +549,7 @@ bool desktop_mouse(uint8_t type, int16_t x, int16_t y) {
         if (dbl && idx >= 0) {
             /* Open the shortcut */
             desktop_shortcut_t *sc = &dt_shortcuts[idx];
-            if (sc->is_app) {
-                /* Launch: built-in or ELF */
-                if (strcmp(sc->path, DESKTOP_BUILTIN_NAVIGATOR) == 0) {
-                    spawn_filemanager_window();
-                } else if (strcmp(sc->path, DESKTOP_BUILTIN_TERMINAL) == 0) {
-                    extern void spawn_terminal_window(void);
-                    spawn_terminal_window();
-                } else {
-                    if (sc->has_icon)
-                        wm_set_pending_icon(sc->icon);
-                    launch_elf_app(sc->path);
-                }
-            } else {
-                file_assoc_open(sc->path);
-            }
+            dt_launch_shortcut(sc);
             return true;
         }
         return idx >= 0;
@@ -568,20 +586,7 @@ bool desktop_handle_command(uint16_t cmd) {
     case DT_CMD_OPEN:
         if (dt_ctx_index >= 0 && dt_ctx_index < dt_count) {
             desktop_shortcut_t *sc = &dt_shortcuts[dt_ctx_index];
-            if (sc->is_app) {
-                if (strcmp(sc->path, DESKTOP_BUILTIN_NAVIGATOR) == 0) {
-                    spawn_filemanager_window();
-                } else if (strcmp(sc->path, DESKTOP_BUILTIN_TERMINAL) == 0) {
-                    extern void spawn_terminal_window(void);
-                    spawn_terminal_window();
-                } else {
-                    if (sc->has_icon)
-                        wm_set_pending_icon(sc->icon);
-                    launch_elf_app(sc->path);
-                }
-            } else {
-                file_assoc_open(sc->path);
-            }
+            dt_launch_shortcut(sc);
         }
         dt_ctx_index = -1;
         return true;
@@ -690,20 +695,7 @@ bool desktop_key(uint8_t scancode, uint8_t modifiers) {
     case 0x58: /* KP Enter */
         if (dt_selected >= 0 && dt_selected < dt_count) {
             desktop_shortcut_t *sc = &dt_shortcuts[dt_selected];
-            if (sc->is_app) {
-                if (strcmp(sc->path, DESKTOP_BUILTIN_NAVIGATOR) == 0) {
-                    spawn_filemanager_window();
-                } else if (strcmp(sc->path, DESKTOP_BUILTIN_TERMINAL) == 0) {
-                    extern void spawn_terminal_window(void);
-                    spawn_terminal_window();
-                } else {
-                    if (sc->has_icon)
-                        wm_set_pending_icon(sc->icon);
-                    launch_elf_app(sc->path);
-                }
-            } else {
-                file_assoc_open(sc->path);
-            }
+            dt_launch_shortcut(sc);
             dt_kb_focus = false;
         }
         return true;

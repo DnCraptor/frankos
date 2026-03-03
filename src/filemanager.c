@@ -207,6 +207,9 @@ static void fm_refresh(filemanager_t *fm) {
                         continue;
                 }
             }
+            /* Skip .xa1 sidecar files (cc extended attribute markers) */
+            if (dot && strcmp(dot, ".xa1") == 0)
+                continue;
         }
 
         fn_entry_t *e = &fm->entries[fm->entry_count];
@@ -247,6 +250,19 @@ static void fm_refresh(filemanager_t *fm) {
                         f_close(&inf);
                     }
                 }
+            }
+
+            /* Also detect cc-compiled executables via .xa1 sidecar */
+            if (!e->is_executable) {
+                if (fm->path[1] == '\0')
+                    snprintf(chk_path, sizeof(chk_path), "/%s.xa1",
+                             fno.fname);
+                else
+                    snprintf(chk_path, sizeof(chk_path), "%s/%s.xa1",
+                             fm->path, fno.fname);
+                FILINFO tmp2;
+                if (fm_file_exists(chk_path, &tmp2))
+                    e->is_executable = 2;  /* cc-compiled executable */
             }
         }
 
@@ -1040,11 +1056,15 @@ static void fm_do_delete(filemanager_t *fm) {
         else
             snprintf(full, sizeof(full), "%s/%s", fm->path, fm->entries[i].name);
         fm_delete_recursive(full);
-        /* Also delete companion .inf for executables */
-        if (fm->entries[i].is_executable) {
+        /* Also delete companion files for executables */
+        if (fm->entries[i].is_executable == 1) {
             char inf[FN_PATH_MAX];
             snprintf(inf, sizeof(inf), "%s.inf", full);
             f_unlink(inf);
+        } else if (fm->entries[i].is_executable == 2) {
+            char xa1[FN_PATH_MAX];
+            snprintf(xa1, sizeof(xa1), "%s.xa1", full);
+            f_unlink(xa1);
         }
         done++;
         if (total > 1)
@@ -1079,8 +1099,8 @@ static void fm_open_item(filemanager_t *fm, int idx) {
 
     if (e->attrib & AM_DIR) {
         fm_navigate(fm, full);
-    } else if (e->is_executable) {
-        /* Load icon from companion .inf and launch */
+    } else if (e->is_executable == 1) {
+        /* ELF app — load icon from companion .inf and launch */
         char inf_path[FN_PATH_MAX];
         snprintf(inf_path, sizeof(inf_path), "%s.inf", full);
 
@@ -1103,6 +1123,9 @@ static void fm_open_item(filemanager_t *fm, int idx) {
         }
         wm_set_pending_icon(icon);
         launch_elf_app(full);
+    } else if (e->is_executable == 2) {
+        /* cc-compiled executable — launch pshell in exec mode */
+        launch_elf_app_with_file("/fos/pshell", full);
     } else {
         /* Regular file — try file association */
         if (!file_assoc_open(full)) {
@@ -1130,10 +1153,11 @@ static void fm_clip_cut(filemanager_t *fm) {
             snprintf(p, FN_PATH_MAX, "%s/%s", fm->path, fm->entries[i].name);
         fm->entries[i].sel_flags |= FN_SEL_CUT;
         fn_clipboard.count++;
-        /* Also add companion .inf for executables */
+        /* Also add companion .inf or .xa1 for executables */
         if (fm->entries[i].is_executable && fn_clipboard.count < 16) {
             char *ip = fn_clipboard.paths[fn_clipboard.count];
-            snprintf(ip, FN_PATH_MAX, "%s.inf", p);
+            snprintf(ip, FN_PATH_MAX, "%s.%s", p,
+                     fm->entries[i].is_executable == 2 ? "xa1" : "inf");
             fn_clipboard.count++;
         }
     }
@@ -1151,10 +1175,11 @@ static void fm_clip_copy(filemanager_t *fm) {
         else
             snprintf(p, FN_PATH_MAX, "%s/%s", fm->path, fm->entries[i].name);
         fn_clipboard.count++;
-        /* Also add companion .inf for executables */
+        /* Also add companion .inf or .xa1 for executables */
         if (fm->entries[i].is_executable && fn_clipboard.count < 16) {
             char *ip = fn_clipboard.paths[fn_clipboard.count];
-            snprintf(ip, FN_PATH_MAX, "%s.inf", p);
+            snprintf(ip, FN_PATH_MAX, "%s.%s", p,
+                     fm->entries[i].is_executable == 2 ? "xa1" : "inf");
             fn_clipboard.count++;
         }
     }
@@ -1989,12 +2014,15 @@ static bool fm_event(hwnd_t hwnd, const window_event_t *event) {
                         snprintf(full, sizeof(full), "%s/%s", fm->path, text);
                     }
                     f_rename(old, full);
-                    /* Also rename companion .inf for executables */
+                    /* Also rename companion .inf or .xa1 for executables */
                     if (fm->entries[fm->focus_index].is_executable) {
-                        char old_inf[FN_PATH_MAX], new_inf[FN_PATH_MAX];
-                        snprintf(old_inf, sizeof(old_inf), "%s.inf", old);
-                        snprintf(new_inf, sizeof(new_inf), "%s.inf", full);
-                        f_rename(old_inf, new_inf);
+                        char old_c[FN_PATH_MAX], new_c[FN_PATH_MAX];
+                        const char *ext =
+                            fm->entries[fm->focus_index].is_executable == 2
+                                ? ".xa1" : ".inf";
+                        snprintf(old_c, sizeof(old_c), "%s%s", old, ext);
+                        snprintf(new_c, sizeof(new_c), "%s%s", full, ext);
+                        f_rename(old_c, new_c);
                     }
                 }
             } else {

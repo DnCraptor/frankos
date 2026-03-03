@@ -99,7 +99,7 @@ typedef struct {
     uint32_t size;
     uint8_t  attrib;            /* FatFS AM_DIR, AM_RDO, etc. */
     uint8_t  sel_flags;         /* FN_SEL_* bitmask             */
-    uint8_t  is_executable;     /* has companion .inf file      */
+    uint8_t  is_executable;     /* 1 = ELF (.inf), 2 = cc (.xa1) */
     int8_t   icon_idx;          /* index into app icon cache (-1=none) */
     int16_t  custom_order;
 } fn_entry_t;

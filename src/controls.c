@@ -157,6 +157,13 @@ void scrollbar_paint(scrollbar_t *sb) {
     int16_t track_start, track_len;
     sb_get_track(sb, &track_start, &track_len);
 
+    /* Compute thumb position once so we can draw the track around it,
+     * avoiding the flicker caused by overdrawing the thumb area. */
+    int16_t thumb_pos = 0, thumb_len = 0;
+    bool has_thumb = (sb->range > sb->page);
+    if (has_thumb)
+        sb_get_thumb(sb, track_start, track_len, &thumb_pos, &thumb_len);
+
     if (sb->horizontal) {
         /* Left arrow button */
         sb_draw_button(sb->x, sb->y, SB_W, SB_W);
@@ -166,8 +173,11 @@ void scrollbar_paint(scrollbar_t *sb) {
         sb_draw_button(sb->x + sb->w - SB_W, sb->y, SB_W, SB_W);
         sb_draw_arrow_right(sb->x + sb->w - SB_W, sb->y);
 
-        /* Track — dithered */
+        /* Track — dithered (skip thumb region to avoid flicker) */
+        int16_t t_rel = has_thumb ? thumb_pos - track_start : track_len;
+        int16_t t_end = has_thumb ? t_rel + thumb_len : track_len;
         for (int16_t x = 0; x < track_len; x++) {
+            if (has_thumb && x >= t_rel && x < t_end) continue;
             for (int16_t y = 0; y < SB_W; y++) {
                 uint8_t c = ((x + y) & 1) ? COLOR_WHITE : COLOR_LIGHT_GRAY;
                 wd_pixel(track_start + x, sb->y + y, c);
@@ -175,11 +185,8 @@ void scrollbar_paint(scrollbar_t *sb) {
         }
 
         /* Thumb */
-        if (sb->range > sb->page) {
-            int16_t thumb_pos, thumb_len;
-            sb_get_thumb(sb, track_start, track_len, &thumb_pos, &thumb_len);
+        if (has_thumb)
             sb_draw_button(thumb_pos, sb->y, thumb_len, SB_W);
-        }
     } else {
         /* Up arrow button */
         sb_draw_button(sb->x, sb->y, SB_W, SB_W);
@@ -189,8 +196,11 @@ void scrollbar_paint(scrollbar_t *sb) {
         sb_draw_button(sb->x, sb->y + sb->h - SB_W, SB_W, SB_W);
         sb_draw_arrow_down(sb->x, sb->y + sb->h - SB_W);
 
-        /* Track — dithered */
+        /* Track — dithered (skip thumb region to avoid flicker) */
+        int16_t t_rel = has_thumb ? thumb_pos - track_start : track_len;
+        int16_t t_end = has_thumb ? t_rel + thumb_len : track_len;
         for (int16_t y = 0; y < track_len; y++) {
+            if (has_thumb && y >= t_rel && y < t_end) continue;
             for (int16_t x = 0; x < SB_W; x++) {
                 uint8_t c = ((x + y) & 1) ? COLOR_WHITE : COLOR_LIGHT_GRAY;
                 wd_pixel(sb->x + x, track_start + y, c);
@@ -198,11 +208,8 @@ void scrollbar_paint(scrollbar_t *sb) {
         }
 
         /* Thumb */
-        if (sb->range > sb->page) {
-            int16_t thumb_pos, thumb_len;
-            sb_get_thumb(sb, track_start, track_len, &thumb_pos, &thumb_len);
+        if (has_thumb)
             sb_draw_button(sb->x, thumb_pos, SB_W, thumb_len);
-        }
     }
 }
 

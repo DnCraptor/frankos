@@ -976,8 +976,25 @@ void run_dialog_check_pending(void) {
         } else if (what == RD_LAUNCH_FILE) {
             cursor_set_type(CURSOR_WAIT);
             wm_composite();
-            if (!file_assoc_open(rd_pending_launch_path))
-                launch_elf_app(rd_pending_launch_path);
+            if (!file_assoc_open(rd_pending_launch_path)) {
+                /* Check if this is a cc-compiled executable (.xa1 sidecar) */
+                char xa1[RD_CMD_MAX + 4];
+                snprintf(xa1, sizeof(xa1), "%s.xa1", rd_pending_launch_path);
+                FILINFO fi;
+                if (f_stat(xa1, &fi) == FR_OK) {
+                    /* Has .xa1 — check if it also has .inf (ELF app) */
+                    char inf[RD_CMD_MAX + 4];
+                    snprintf(inf, sizeof(inf), "%s.inf",
+                             rd_pending_launch_path);
+                    if (f_stat(inf, &fi) == FR_OK)
+                        launch_elf_app(rd_pending_launch_path);
+                    else
+                        launch_elf_app_with_file("/fos/pshell",
+                                                 rd_pending_launch_path);
+                } else {
+                    launch_elf_app(rd_pending_launch_path);
+                }
+            }
             cursor_set_type(CURSOR_ARROW);
         }
         return;

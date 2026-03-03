@@ -74,7 +74,7 @@
 #define ADJ_MASK ((1 << ADJ_BITS) - 1)
 
 // executable version
-#define CC_VERSION 0xc6
+#define CC_VERSION 0xc8
 
 // pshell common functions
 extern char* full_path(char* name);                  // expand file name to full path name
@@ -4579,11 +4579,12 @@ void __not_in_flash_func(dummy)(void) {
 
 // executable file header
 struct exe_s {
-    uint32_t entry;      // entry point
+    uint32_t entry;      // entry point (offset from text base)
     uint16_t tsize;      // text segment size
     uint16_t nreloc;     // # of external function relocation entries
     uint32_t dsize : 24; // data segment size
     uint32_t ccver : 8;  // exec version
+    uint32_t text_base;  // original text base for position relocation
 };
 
 // compiler can be invoked in compile mode (mode = 0)
@@ -4820,7 +4821,7 @@ int cc(int mode, int argc, char** argv) {
         if (!idmain->val)
             fatal("main() not defined\n");
 
-        // save the entry point address
+        // save the entry point address (absolute for execution)
         exe.entry = idmain->val;
 
         // optionally create executable output file
@@ -4838,7 +4839,11 @@ int cc(int mode, int argc, char** argv) {
             exe.dsize = data - data_base;
             exe.ccver = CC_VERSION;
             exe.nreloc = nrelocs;
-            if (fs_file_write(fd, &exe, sizeof(exe)) != sizeof(exe)) {
+            exe.text_base = (uint32_t)text_base;
+            // write header with entry as offset (position-independent)
+            struct exe_s fhdr = exe;
+            fhdr.entry -= (int)text_base;
+            if (fs_file_write(fd, &fhdr, sizeof(fhdr)) != sizeof(fhdr)) {
                 fs_file_close(fd);
                 fatal("error writing executable file");
             }
@@ -4852,10 +4857,11 @@ int cc(int mode, int argc, char** argv) {
                 fs_file_close(fd);
                 fatal("error writing executable file");
             }
-            // write the external function relocation list
+            // write the external function relocation list (as offsets from text base)
             while (relocs) {
-                if (fs_file_write(fd, &relocs->addr, sizeof(relocs->addr)) !=
-                    sizeof(relocs->addr)) {
+                int offset = relocs->addr - (int)text_base;
+                if (fs_file_write(fd, &offset, sizeof(offset)) !=
+                    sizeof(offset)) {
                     fs_file_close(fd);
                     fatal("error writing executable file");
                 }
@@ -4898,12 +4904,19 @@ int cc(int mode, int argc, char** argv) {
         }
         if (exe.ccver != CC_VERSION)
             fatal("executable compiled with earlier incompatible version, please recompile");
+        // rebase entry point from offset to absolute address
+        exe.entry += (int)__StackLimit;
         // read in the code segment
         if (fs_file_read(fd, __StackLimit, exe.tsize) != exe.tsize) {
             fs_file_close(fd);
             fd = NULL;
             fatal("error reading %s", ofn);
         }
+        // set the code emission pointer so that trampolines built by
+        // wrap_wm_create_window (at e+1) land in executable RAM right
+        // after the loaded text, not at address 0 (ROM).
+        e = (uint16_t*)(__StackLimit + exe.tsize) - 1;
+        data_base = __StackLimit + TEXT_BYTES;
         // read in the data segment
         int ds = exe.dsize;
         if (ds && fs_file_read(fd, __StackLimit + TEXT_BYTES, ds) != ds) {
@@ -4912,6 +4925,7 @@ int cc(int mode, int argc, char** argv) {
             fatal("error reading %s", ofn);
         }
         // set all the relocatable external function calls
+        // (relocation addresses are stored as offsets from text base)
         for (int i = 0; i < exe.nreloc; i++) {
             int addr;
             if (fs_file_read(fd, &addr, sizeof(addr)) != sizeof(addr)) {
@@ -4919,6 +4933,7 @@ int cc(int mode, int argc, char** argv) {
                 fd = NULL;
                 fatal("error reading %s", ofn);
             }
+            addr += (int)__StackLimit;  // rebase offset to absolute
             int v = *((int*)addr);
             if (v < 0) {
 #if PICO_RP2040
@@ -4937,6 +4952,31 @@ int cc(int mode, int argc, char** argv) {
         fs_file_close(fd);
         cc_free(fd, 1);
         fd = NULL;
+        // Relocate internal addresses (function pointers, data/string refs).
+        // The compiler stores these as absolute addresses in literal pool
+        // entries.  When loaded at a different __StackLimit, they must be
+        // rebased.  Scan all word-aligned 32-bit values in the text segment
+        // and adjust any that fall within the old text or data ranges.
+        {
+            int delta = (int)__StackLimit - (int)exe.text_base;
+            if (delta != 0) {
+                uint32_t old_text = exe.text_base;
+                uint32_t old_text_end = old_text + exe.tsize;
+                uint32_t old_data = old_text + TEXT_BYTES;
+                uint32_t old_data_end = old_data + exe.dsize;
+                // Literal pool entries are word-aligned (4-byte boundary)
+                uint32_t *wp = (uint32_t*)(((uintptr_t)__StackLimit + 3) & ~3u);
+                uint32_t *wp_end = (uint32_t*)(__StackLimit + exe.tsize);
+                for (; wp < wp_end; wp++) {
+                    uint32_t v = *wp;
+                    uint32_t vn = v & ~1u; // strip Thumb bit for func ptrs
+                    if ((vn >= old_text && vn < old_text_end) ||
+                        (v >= old_data && v < old_data_end)) {
+                        *wp = v + delta;
+                    }
+                }
+            }
+        }
     }
     cc_free_all();
 

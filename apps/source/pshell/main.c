@@ -28,8 +28,14 @@ static TaskHandle_t   g_shell_task = NULL;
 static volatile bool  g_closing    = false;
 static TimerHandle_t  g_blink_tmr  = NULL;
 
+/* Executable mode: when non-NULL, pshell runs this file and exits */
+static const char    *g_exec_file  = NULL;
+
 /* Forward declaration of the pshell entry point (in shell.c) */
 extern int pshell_main(void);
+
+/* Forward declaration: exec mode — run a cc binary and return (in shell.c) */
+extern int pshell_exec(const char *file);
 
 /* ═════════════════════════════════════════════════════════════════════════
  * Menu setup
@@ -225,7 +231,10 @@ static void shell_task_fn(void *param) {
     /* Register this task as the input waiter so vt100_getch() works */
     vt100_set_waiter(xTaskGetCurrentTaskHandle());
 
-    pshell_main();
+    if (g_exec_file)
+        pshell_exec(g_exec_file);
+    else
+        pshell_main();
 
     /* Shell exited — clear handle BEFORE self-delete so the main task's
      * cleanup path sees NULL and skips the force-delete (double vTaskDelete
@@ -242,17 +251,20 @@ static void shell_task_fn(void *param) {
  * ═════════════════════════════════════════════════════════════════════════ */
 
 int main(int argc, char **argv) {
-    (void)argc; (void)argv;
+    bool exec_mode = (argc > 1 && argv[1] != NULL);
 
-    /* Singleton: if already running, focus existing window */
-    hwnd_t existing = wm_find_window_by_title("PShell");
-    if (existing != 0) {
-        wm_set_focus(existing);
-        return 0;
+    /* Singleton: if already running in shell mode, focus existing window */
+    if (!exec_mode) {
+        hwnd_t existing = wm_find_window_by_title("PShell");
+        if (existing != 0) {
+            wm_set_focus(existing);
+            return 0;
+        }
     }
 
     g_main_task = xTaskGetCurrentTaskHandle();
     g_closing = false;
+    g_exec_file = exec_mode ? argv[1] : NULL;
 
     /* Initialise VT100 terminal (70×20 default) */
     vt100_init(VT100_DEFAULT_COLS, VT100_DEFAULT_ROWS);
@@ -261,16 +273,36 @@ int main(int argc, char **argv) {
     int16_t client_w = VT100_DEFAULT_COLS * VT100_FONT_W;    /* 560 */
     int16_t client_h = VT100_DEFAULT_ROWS * VT100_FONT_H;    /* 320 */
     int16_t win_w = client_w + 2 * THEME_BORDER_WIDTH;
-    int16_t win_h = client_h + THEME_TITLE_HEIGHT + THEME_MENU_HEIGHT
-                  + 2 * THEME_BORDER_WIDTH;
+    int16_t win_h;
+    uint16_t style;
+
+    if (exec_mode) {
+        /* No menu bar in exec mode */
+        win_h = client_h + THEME_TITLE_HEIGHT + 2 * THEME_BORDER_WIDTH;
+        style = WSTYLE_DEFAULT;
+    } else {
+        win_h = client_h + THEME_TITLE_HEIGHT + THEME_MENU_HEIGHT
+              + 2 * THEME_BORDER_WIDTH;
+        style = WSTYLE_DEFAULT | WF_MENUBAR;
+    }
+
+    /* Build window title — use filename for exec mode */
+    const char *title = "PShell";
+    char exec_title[64];
+    if (exec_mode) {
+        const char *slash = strrchr(argv[1], '/');
+        const char *base = slash ? slash + 1 : argv[1];
+        snprintf(exec_title, sizeof(exec_title), "%.60s", base);
+        title = exec_title;
+    }
 
     /* Centre window */
     int16_t x = (DISPLAY_WIDTH - win_w) / 2;
     int16_t y = (DISPLAY_HEIGHT - TASKBAR_HEIGHT - win_h) / 2;
     if (y < 0) y = 0;
 
-    g_hwnd = wm_create_window(x, y, win_w, win_h, "PShell",
-                              WSTYLE_DEFAULT | WF_MENUBAR,
+    g_hwnd = wm_create_window(x, y, win_w, win_h, title,
+                              style,
                               pshell_event, pshell_paint);
     if (g_hwnd == 0) {
         vt100_destroy();
@@ -278,7 +310,8 @@ int main(int argc, char **argv) {
     }
 
     vt100_set_hwnd(g_hwnd);
-    setup_menu(g_hwnd);
+    if (!exec_mode)
+        setup_menu(g_hwnd);
 
     window_t *win = wm_get_window(g_hwnd);
     if (win) win->bg_color = COLOR_BLACK;
