@@ -4,11 +4,11 @@ A complete desktop operating system for the RP2350 microcontroller. FRANK OS tur
 
 Built on FreeRTOS with DVI video output, PS/2 keyboard and mouse input, SD card storage, and optional PSRAM for application memory. Compatible with [Murmulator OS 2](https://github.com/DnCraptor/murmulator-os2) applications.
 
-![Desktop with file manager and terminal](images/screenshot1.jpg)
+![Desktop with file manager and terminal](images/screenshot1.png)
 
-![Start menu and applications](images/screenshot2.jpg)
+![Start menu and applications](images/screenshot2.png)
 
-![Minesweeper](images/screenshot3.jpg)
+![Minesweeper](images/screenshot3.png)
 
 ## What Makes It Special
 
