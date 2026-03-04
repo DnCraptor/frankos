@@ -84,19 +84,9 @@ Four settings applets accessible from the Start menu:
 
 All settings persist to `/fos/settings.dat` on the SD card.
 
-## Terminal Emulator
-
-- VT100 escape sequence support (cursor movement, SGR colors, erase commands)
-- 70x20 character grid (80x30 in fullscreen)
-- 16-color text with foreground/background control
-- Cursor blink timer
-- 256-byte input ring buffer with non-blocking I/O
-- Multiple concurrent terminal instances, each running its own shell
-- Fullscreen toggle with Alt+Enter
-
 ## Built-in Shell
 
-The terminal runs PShell, an interactive command interpreter:
+The Terminal runs PShell, an interactive command interpreter. It can also launch MOS2-compatible console applications directly from the SD card.
 
 | Command | Description |
 |---------|-------------|
@@ -117,7 +107,10 @@ The terminal runs PShell, an interactive command interpreter:
 
 ## Applications
 
-FRANK OS ships with 8 standalone ELF applications:
+FRANK OS ships with 9 standalone applications:
+
+### Terminal
+VT100 terminal emulator with multiple concurrent instances, each running its own shell session. Supports 16-color text, cursor movement, SGR escape sequences, and a 70x20 character grid (80x30 in fullscreen with Alt+Enter). Runs built-in shell commands and launches MOS2-compatible console applications from the SD card. The `sdcard/mos2/` directory includes 50+ command-line utilities (hex editor, file tools, benchmarks, and more).
 
 ### Notepad
 Full-featured text editor with menu bar, clipboard, find/replace, and syntax highlighting. Supports C, C++, and INI highlighting modes. Includes a Dev menu for compiling and running C source files directly.
