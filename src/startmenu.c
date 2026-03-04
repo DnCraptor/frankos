@@ -26,6 +26,7 @@
 #include "ico.h"
 #include "ff.h"
 #include "run_dialog.h"
+#include "control_panel.h"
 #include "hardware/watchdog.h"
 #include <string.h>
 #include <stdio.h>
@@ -39,6 +40,7 @@
 #define SM_ID_REBOOT        2
 #define SM_ID_FIRMWARE      3
 #define SM_ID_RUN           4
+#define SM_ID_SETTINGS      5
 
 /* Right-click context popup state (drawn inside startmenu, not popup menu) */
 static bool    sm_ctx_open    = false;
@@ -62,13 +64,15 @@ typedef struct {
 
 static const sm_item_t sm_items[] = {
     { "Programs",  0,               false, true  },
+    { "Settings",  SM_ID_SETTINGS,  false, true  },
     { "Firmware",  SM_ID_FIRMWARE,  true,  true  },
     { "Run...",    SM_ID_RUN,       true,  false },
     { "Reboot",    SM_ID_REBOOT,    true,  false },
 };
 #define SM_ITEM_COUNT  (sizeof(sm_items) / sizeof(sm_items[0]))
 #define SM_IDX_PROGRAMS  0
-#define SM_IDX_FIRMWARE  1
+#define SM_IDX_SETTINGS  1
+#define SM_IDX_FIRMWARE  2
 
 /*==========================================================================
  * Dynamic /fos/ app scanning
@@ -233,6 +237,11 @@ static bool   fw_open = false;
 static int8_t fw_hover = -1;
 static int16_t fw_x, fw_y, fw_w, fw_h;
 
+/* Settings submenu state */
+static bool   set_open = false;
+static int8_t set_hover = -1;
+static int16_t set_x, set_y, set_w, set_h;
+
 /* Pending action state — deferred until dialog is dismissed */
 enum { PENDING_NONE, PENDING_REBOOT, PENDING_FIRMWARE };
 static uint8_t pending_action = PENDING_NONE;
@@ -284,6 +293,24 @@ static void compute_fw_rect(void) {
         fw_y = 0;
 }
 
+static void compute_set_rect(void) {
+    set_w = 148;
+    set_h = 4 + 1 * SM_ITEM_HEIGHT;  /* one item: Control Panel */
+    set_x = sm_x + sm_w;
+    /* Align with the Settings item row */
+    int iy = sm_y + 2;
+    for (int i = 0; i < SM_IDX_SETTINGS; i++) {
+        if (sm_items[i].separator) iy += SM_SEPARATOR_H;
+        iy += SM_ITEM_HEIGHT;
+    }
+    if (sm_items[SM_IDX_SETTINGS].separator) iy += SM_SEPARATOR_H;
+    set_y = iy;
+    if (set_y + set_h > TASKBAR_Y)
+        set_y = TASKBAR_Y - set_h;
+    if (set_y < 0)
+        set_y = 0;
+}
+
 /*==========================================================================
  * Public API
  *=========================================================================*/
@@ -303,6 +330,8 @@ void startmenu_toggle(void) {
         sub_hover = -1;
         fw_open = false;
         fw_hover = -1;
+        set_open = false;
+        set_hover = -1;
         compute_menu_rect();
         taskbar_invalidate();  /* redraw Start button in sunken state */
     }
@@ -313,10 +342,12 @@ void startmenu_close(void) {
     sm_open = false;
     sub_open = false;
     fw_open = false;
+    set_open = false;
     sm_ctx_open = false;
     sm_hover = -1;
     sub_hover = -1;
     fw_hover = -1;
+    set_hover = -1;
     sm_ctx_hover = -1;
     sm_ctx_app_idx = -1;
     /* Force full repaint to guarantee stale menu pixels are cleared,
@@ -334,6 +365,7 @@ bool startmenu_is_open(void) {
 
 /* Declared in main.c */
 extern void spawn_terminal_window(void);
+extern void spawn_control_panel(void);
 
 static void execute_sub_item(int index) {
     startmenu_close();
@@ -650,6 +682,24 @@ void startmenu_draw(void) {
         }
     }
 
+    /* Draw Settings submenu if open */
+    if (set_open) {
+        gfx_fill_rect(set_x, set_y, set_w, set_h, THEME_BUTTON_FACE);
+        gfx_hline(set_x, set_y, set_w, COLOR_WHITE);
+        gfx_vline(set_x, set_y, set_h, COLOR_WHITE);
+        gfx_hline(set_x, set_y + set_h - 1, set_w, COLOR_DARK_GRAY);
+        gfx_vline(set_x + set_w - 1, set_y, set_h, COLOR_DARK_GRAY);
+
+        bool hovered = (set_hover == 0);
+        uint8_t bg = hovered ? COLOR_BLUE : THEME_BUTTON_FACE;
+        uint8_t fg = hovered ? COLOR_WHITE : COLOR_BLACK;
+        int sy = set_y + 2;
+        gfx_fill_rect(set_x + 2, sy, set_w - 4, SM_ITEM_HEIGHT, bg);
+        gfx_draw_icon_16(set_x + 4, sy + 4, cp_get_icon16());
+        gfx_text_ui(set_x + 24, sy + (SM_ITEM_HEIGHT - FONT_UI_HEIGHT) / 2,
+                    "Control Panel", fg, bg);
+    }
+
     /* Draw right-click context popup (if open) */
     if (sm_ctx_open) {
         gfx_fill_rect(sm_ctx_x, sm_ctx_y, sm_ctx_w, sm_ctx_h,
@@ -678,6 +728,26 @@ void startmenu_draw(void) {
 
 bool startmenu_mouse(uint8_t type, int16_t x, int16_t y) {
     if (!sm_open) return false;
+
+    /* Check Settings submenu */
+    if (set_open && x >= set_x && x < set_x + set_w &&
+        y >= set_y && y < set_y + set_h) {
+        if (type == WM_MOUSEMOVE || type == WM_LBUTTONDOWN) {
+            int sy = set_y + 2;
+            int new_set = -1;
+            if (y >= sy && y < sy + SM_ITEM_HEIGHT)
+                new_set = 0;
+            if (new_set != set_hover) {
+                set_hover = new_set;
+                wm_mark_dirty();
+            }
+        }
+        if (type == WM_LBUTTONUP && set_hover >= 0) {
+            startmenu_close();
+            spawn_control_panel();
+        }
+        return true;
+    }
 
     /* Check firmware submenu first */
     if (fw_open && x >= fw_x && x < fw_x + fw_w &&
@@ -817,19 +887,24 @@ bool startmenu_mouse(uint8_t type, int16_t x, int16_t y) {
             }
             if (new_hover != sm_hover) {
                 sm_hover = new_hover;
-                /* Close both submenus, then open the relevant one.
+                /* Close all submenus, then open the relevant one.
                  * Use full repaint to clear stale submenu pixels. */
-                bool had_sub = sub_open || fw_open;
+                bool had_sub = sub_open || fw_open || set_open;
                 sub_open = false;
                 sub_hover = -1;
                 fw_open = false;
                 fw_hover = -1;
+                set_open = false;
+                set_hover = -1;
                 if (sm_hover == SM_IDX_PROGRAMS) {
                     sub_open = true;
                     compute_sub_rect();
                 } else if (sm_hover == SM_IDX_FIRMWARE) {
                     fw_open = true;
                     compute_fw_rect();
+                } else if (sm_hover == SM_IDX_SETTINGS) {
+                    set_open = true;
+                    compute_set_rect();
                 }
                 if (had_sub)
                     wm_force_full_repaint();
@@ -863,6 +938,34 @@ bool startmenu_mouse(uint8_t type, int16_t x, int16_t y) {
 bool startmenu_handle_key(uint8_t hid_code, uint8_t modifiers) {
     if (!sm_open) return false;
     (void)modifiers;
+
+    /* Settings submenu keyboard handling */
+    if (set_open) {
+        switch (hid_code) {
+        case 0x52: /* UP */
+        case 0x51: /* DOWN */
+            set_hover = 0;  /* only one item */
+            wm_mark_dirty();
+            return true;
+        case 0x50: /* LEFT — close submenu */
+            set_open = false;
+            set_hover = -1;
+            wm_force_full_repaint();
+            return true;
+        case 0x28: /* ENTER */
+            if (set_hover >= 0) {
+                startmenu_close();
+                spawn_control_panel();
+            }
+            return true;
+        case 0x29: /* ESC */
+            set_open = false;
+            set_hover = -1;
+            wm_force_full_repaint();
+            return true;
+        }
+        return true;
+    }
 
     /* Firmware submenu keyboard handling */
     if (fw_open) {
@@ -934,23 +1037,26 @@ bool startmenu_handle_key(uint8_t hid_code, uint8_t modifiers) {
     case 0x52: /* UP */
         sm_hover--;
         if (sm_hover < 0) sm_hover = SM_ITEM_COUNT - 1;
-        if (sub_open || fw_open) wm_force_full_repaint();
+        if (sub_open || fw_open || set_open) wm_force_full_repaint();
         else wm_mark_dirty();
         sub_open = false;
         fw_open = false;
+        set_open = false;
         return true;
     case 0x51: /* DOWN */
         sm_hover++;
         if (sm_hover >= (int)SM_ITEM_COUNT) sm_hover = 0;
-        if (sub_open || fw_open) wm_force_full_repaint();
+        if (sub_open || fw_open || set_open) wm_force_full_repaint();
         else wm_mark_dirty();
         sub_open = false;
         fw_open = false;
+        set_open = false;
         return true;
     case 0x4F: /* RIGHT — open submenu if applicable */
         if (sm_hover >= 0 && sm_items[sm_hover].has_submenu) {
             sub_open = false; sub_hover = -1;
             fw_open = false;  fw_hover = -1;
+            set_open = false; set_hover = -1;
             if (sm_hover == SM_IDX_PROGRAMS) {
                 sub_open = true;
                 sub_hover = 0;
@@ -959,6 +1065,10 @@ bool startmenu_handle_key(uint8_t hid_code, uint8_t modifiers) {
                 fw_open = true;
                 fw_hover = uf2_file_count > 0 ? 0 : -1;
                 compute_fw_rect();
+            } else if (sm_hover == SM_IDX_SETTINGS) {
+                set_open = true;
+                set_hover = 0;
+                compute_set_rect();
             }
             wm_mark_dirty();
         }
@@ -967,15 +1077,24 @@ bool startmenu_handle_key(uint8_t hid_code, uint8_t modifiers) {
         if (sm_hover >= 0) {
             if (sm_hover == SM_IDX_PROGRAMS) {
                 fw_open = false; fw_hover = -1;
+                set_open = false; set_hover = -1;
                 sub_open = true;
                 sub_hover = 0;
                 compute_sub_rect();
                 wm_mark_dirty();
             } else if (sm_hover == SM_IDX_FIRMWARE) {
                 sub_open = false; sub_hover = -1;
+                set_open = false; set_hover = -1;
                 fw_open = true;
                 fw_hover = uf2_file_count > 0 ? 0 : -1;
                 compute_fw_rect();
+                wm_mark_dirty();
+            } else if (sm_hover == SM_IDX_SETTINGS) {
+                sub_open = false; sub_hover = -1;
+                fw_open = false;  fw_hover = -1;
+                set_open = true;
+                set_hover = 0;
+                compute_set_rect();
                 wm_mark_dirty();
             } else if (sm_items[sm_hover].id > 0) {
                 execute_item(sm_items[sm_hover].id);

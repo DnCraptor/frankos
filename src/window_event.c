@@ -88,7 +88,8 @@ static uint8_t titlebar_btn_zone  = HT_NOWHERE; /* HT_CLOSE / HT_MAXIMIZE / HT_M
 static bool    titlebar_btn_shown = false;       /* visually pressed (false when cursor leaves) */
 
 /* Title bar double-click detection */
-#define DBLCLICK_TICKS  pdMS_TO_TICKS(400)
+static uint32_t g_dblclick_ticks = 0; /* initialized in wm_event_init */
+#define DBLCLICK_TICKS  g_dblclick_ticks
 static uint32_t dblclick_tick = 0;
 static hwnd_t   dblclick_hwnd = HWND_NULL;
 
@@ -98,6 +99,13 @@ void wm_event_init(void) {
     eq_head = 0;
     eq_tail = 0;
     eq_count = 0;
+    g_dblclick_ticks = pdMS_TO_TICKS(400);
+}
+
+void wm_set_dblclick_speed(uint16_t ms) {
+    if (ms < 200) ms = 200;
+    if (ms > 800) ms = 800;
+    g_dblclick_ticks = pdMS_TO_TICKS(ms);
 }
 
 /*==========================================================================

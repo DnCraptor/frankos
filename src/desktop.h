@@ -98,4 +98,10 @@ bool desktop_has_focus(void);
  * Returns true if the event was consumed. */
 bool desktop_key(uint8_t scancode, uint8_t modifiers);
 
+/* Set desktop background color (palette index 0-15) */
+void desktop_set_bg_color(uint8_t color);
+
+/* Get current desktop background color */
+uint8_t desktop_get_bg_color(void);
+
 #endif /* DESKTOP_H */

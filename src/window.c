@@ -979,7 +979,7 @@ void wm_composite(void) {
     if (needs_full_repaint) {
         /*--- Fallback path: full repaint ---*/
         cursor_overlay_erase();
-        display_clear(THEME_DESKTOP_COLOR);
+        display_clear(desktop_get_bg_color());
         desktop_paint();
         needs_full_repaint = false;
         did_full_repaint = true;
@@ -1118,7 +1118,7 @@ void wm_composite(void) {
          * (cursor is now safely erased) */
         for (uint8_t e = 0; e < saved_expose_count; e++) {
             rect_t *er = &expose_rects[e];
-            gfx_fill_rect(er->x, er->y, er->w, er->h, THEME_DESKTOP_COLOR);
+            gfx_fill_rect(er->x, er->y, er->w, er->h, desktop_get_bg_color());
         }
         /* Repaint desktop icons over the cleared expose rects */
         if (saved_expose_count > 0)

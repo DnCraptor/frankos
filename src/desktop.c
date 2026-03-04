@@ -23,11 +23,14 @@
 #include "ico.h"
 #include "ff.h"
 #include "sdcard_init.h"
+#include "settings.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
+
+static uint8_t dt_bg_color = COLOR_CYAN; /* updated from settings */
 
 /*==========================================================================
  * Layout constants — column-first grid, top-left origin
@@ -389,8 +392,19 @@ void desktop_init(void) {
     memset(dt_shortcuts, 0, sizeof(dt_shortcuts));
     dt_count = 0;
     dt_selected = -1;
+    dt_bg_color = settings_get()->desktop_color;
     dt_load();
     dt_dirty = true;
+}
+
+void desktop_set_bg_color(uint8_t color) {
+    if (color > 15) color = COLOR_CYAN;
+    dt_bg_color = color;
+    dt_dirty = true;
+}
+
+uint8_t desktop_get_bg_color(void) {
+    return dt_bg_color;
 }
 
 /* Cached default 32x32 icon (upscaled from default_icon_16x16 on first use) */
@@ -443,7 +457,7 @@ void desktop_paint(void) {
         }
         gfx_text_ui(text_x, text_y, display_name,
                      COLOR_WHITE,
-                     selected ? COLOR_BLUE : THEME_DESKTOP_COLOR);
+                     selected ? COLOR_BLUE : dt_bg_color);
     }
 
     dt_dirty = false;

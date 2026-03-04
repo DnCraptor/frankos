@@ -81,6 +81,9 @@ add_executable(frankos
     src/file_assoc.c
     src/desktop.c
     src/ico.c
+    src/settings.c
+    src/control_panel.c
+    src/cp_icons.c
 
     # MOS2 core (copied from murmulator-os2)
     src/app.c

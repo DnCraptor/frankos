@@ -307,6 +307,13 @@ bool wm_keyboard_move_key(uint8_t hid_code);
 bool wm_is_keyboard_move_active(void);
 
 /*==========================================================================
+ * Configurable double-click speed
+ *=========================================================================*/
+
+/* Set the double-click detection threshold (200-800 ms, clamped) */
+void wm_set_dblclick_speed(uint16_t ms);
+
+/*==========================================================================
  * Modal dialog support
  *=========================================================================*/
 

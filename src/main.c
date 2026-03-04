@@ -45,6 +45,8 @@
 #include "sound.h"
 #include "snd.h"
 #include "startup_sound.h"
+#include "settings.h"
+#include "control_panel.h"
 #ifdef PSRAM_MAX_FREQ_MHZ
 #include "psram_init.h"
 #endif
@@ -190,9 +192,10 @@ static volatile bool g_video_dirty = true;
 /* Deferred spawn/open flags — set by input_task, consumed by compositor_task.
  * Avoids calling heavy WM/allocation functions from the small input_task stack
  * and prevents races with the compositor. */
-static volatile bool g_spawn_terminal_pending  = false;
-static volatile bool g_spawn_navigator_pending = false;
-static volatile bool g_open_run_dialog_pending = false;
+static volatile bool g_spawn_terminal_pending       = false;
+static volatile bool g_spawn_navigator_pending      = false;
+static volatile bool g_open_run_dialog_pending      = false;
+static volatile bool g_spawn_control_panel_pending  = false;
 
 /* Boot cursor state: cursor is hidden after the hourglass timeout until
  * the user first moves the mouse.  Non-static so wm_composite can skip
@@ -405,7 +408,7 @@ static void compositor_task(void *params) {
          * If the focused window is fullscreen, exit it first so the new
          * window/dialog appears over a normal desktop. */
         if (g_spawn_terminal_pending || g_spawn_navigator_pending ||
-            g_open_run_dialog_pending) {
+            g_open_run_dialog_pending || g_spawn_control_panel_pending) {
             hwnd_t fs_win = wm_get_focus();
             if (fs_win != HWND_NULL && wm_is_fullscreen(fs_win)) {
                 wm_toggle_fullscreen(fs_win);
@@ -423,6 +426,12 @@ static void compositor_task(void *params) {
         if (g_open_run_dialog_pending) {
             g_open_run_dialog_pending = false;
             run_dialog_open();
+        }
+        if (g_spawn_control_panel_pending) {
+            g_spawn_control_panel_pending = false;
+            wm_set_pending_icon(cp_get_icon16());
+            wm_set_pending_icon32(cp_get_icon32());
+            control_panel_create();
         }
 
         /* Update clock in taskbar every minute (even without input) */
@@ -465,6 +474,14 @@ void spawn_terminal_window(void) {
     }
     wm_set_focus(hwnd);
     taskbar_invalidate();
+}
+
+/*==========================================================================
+ * Spawn a new Control Panel window
+ *=========================================================================*/
+void spawn_control_panel(void) {
+    g_spawn_control_panel_pending = true;
+    g_video_dirty = true;
 }
 
 static void input_task(void *params) {
@@ -868,8 +885,14 @@ int main(void) {
     }
     stdio_flush();
 
+    /* Load persistent settings from /fos/settings.dat (safe if no SD) */
+    settings_load();
+
     /* Initialize sound mixer (starts I2S at 44100 Hz, DMA plays silence) */
     snd_init();
+
+    /* Apply saved volume from settings */
+    snd_set_volume(settings_get()->volume);
 
     /* Install multicore lockout handler on Core 1 so flash_block() can
      * safely pause Core 1 during flash erase/program operations.

@@ -1,0 +1,1045 @@
+/*
+ * FRANK OS — Control Panel
+ * Copyright (c) 2026 Mikhail Matveev <xtreme@rh1.tech>
+ * https://rh1.tech
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+#include "control_panel.h"
+#include "settings.h"
+#include "window.h"
+#include "window_event.h"
+#include "window_theme.h"
+#include "window_draw.h"
+#include "gfx.h"
+#include "font.h"
+#include "display.h"
+#include "dialog.h"
+#include "taskbar.h"
+#include "board_config.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "hardware/clocks.h"
+#include <string.h>
+#include <stdio.h>
+
+/* Forward declarations for psram */
+extern uint32_t psram_detected_bytes(void);
+
+/*==========================================================================
+ * Icon data (defined in cp_icons.c)
+ *=========================================================================*/
+
+extern const uint8_t cp_icon16[];
+extern const uint8_t cp_icon32[];
+extern const uint8_t cp_disp_icon32[];
+extern const uint8_t cp_sys_icon32[];
+extern const uint8_t cp_mouse_icon32[];
+extern const uint8_t cp_freq_icon32[];
+
+/* Folder icon for mouse double-click test */
+extern const uint8_t fn_icon32_folder[];
+
+/*==========================================================================
+ * Configurable double-click speed (defined in window_event.c)
+ *=========================================================================*/
+
+extern void wm_set_dblclick_speed(uint16_t ms);
+
+/*==========================================================================
+ * Desktop color update
+ *=========================================================================*/
+
+extern void desktop_set_bg_color(uint8_t color);
+
+/*==========================================================================
+ * Control Panel main window
+ *=========================================================================*/
+
+#define CP_ITEMS      4
+#define CP_CELL_W    76
+#define CP_CELL_H    56
+#define CP_ICON_SIZE 32
+#define CP_MARGIN_X   8
+#define CP_MARGIN_Y   8
+
+typedef struct {
+    hwnd_t  hwnd;
+    int8_t  selected;
+    int8_t  hover;
+    /* Double-click tracking */
+    int8_t  last_click_idx;
+    uint32_t last_click_tick;
+} cp_state_t;
+
+static cp_state_t cp_state;
+
+static const char *cp_labels[CP_ITEMS] = {
+    "Desktop", "System", "Mouse", "Frequencies"
+};
+
+static const uint8_t *cp_icons[CP_ITEMS];
+
+/* Forward declarations for applet creation */
+static void cp_open_display(void);
+static void cp_open_system(void);
+static void cp_open_mouse(void);
+static void cp_open_freq(void);
+
+static void cp_open_applet(int idx) {
+    switch (idx) {
+    case 0: cp_open_display(); break;
+    case 1: cp_open_system();  break;
+    case 2: cp_open_mouse();   break;
+    case 3: cp_open_freq();    break;
+    }
+}
+
+/* Grid hit-test: returns item index or -1 */
+static int cp_hit(int16_t x, int16_t y) {
+    /* Items laid out left-to-right */
+    for (int i = 0; i < CP_ITEMS; i++) {
+        int cx = CP_MARGIN_X + i * CP_CELL_W;
+        int cy = CP_MARGIN_Y;
+        if (x >= cx && x < cx + CP_CELL_W &&
+            y >= cy && y < cy + CP_CELL_H)
+            return i;
+    }
+    return -1;
+}
+
+static bool cp_event(hwnd_t hwnd, const window_event_t *ev) {
+    cp_state_t *st = &cp_state;
+
+    switch (ev->type) {
+    case WM_CLOSE:
+        wm_destroy_window(hwnd);
+        memset(st, 0, sizeof(*st));
+        return true;
+
+    case WM_LBUTTONDOWN: {
+        int idx = cp_hit(ev->mouse.x, ev->mouse.y);
+        if (idx >= 0) {
+            st->selected = idx;
+            wm_invalidate(hwnd);
+        }
+        return true;
+    }
+
+    case WM_LBUTTONUP: {
+        int idx = cp_hit(ev->mouse.x, ev->mouse.y);
+        uint32_t now = xTaskGetTickCount();
+        if (idx >= 0 && idx == st->last_click_idx &&
+            (now - st->last_click_tick) < pdMS_TO_TICKS(400)) {
+            /* Double-click: open applet */
+            cp_open_applet(idx);
+            st->last_click_idx = -1;
+            st->last_click_tick = 0;
+        } else {
+            st->last_click_idx = idx;
+            st->last_click_tick = now;
+        }
+        return true;
+    }
+
+    case WM_KEYDOWN:
+        if (ev->key.scancode == 0x28 /* Enter */ && st->selected >= 0) {
+            cp_open_applet(st->selected);
+            return true;
+        }
+        /* Arrow keys */
+        if (ev->key.scancode == 0x4F /* Right */) {
+            st->selected = (st->selected + 1) % CP_ITEMS;
+            wm_invalidate(hwnd);
+            return true;
+        }
+        if (ev->key.scancode == 0x50 /* Left */) {
+            st->selected = (st->selected + CP_ITEMS - 1) % CP_ITEMS;
+            wm_invalidate(hwnd);
+            return true;
+        }
+        break;
+
+    default:
+        break;
+    }
+    return false;
+}
+
+static void cp_paint(hwnd_t hwnd) {
+    cp_state_t *st = &cp_state;
+    wd_begin(hwnd);
+    wd_clear(COLOR_WHITE);
+
+    for (int i = 0; i < CP_ITEMS; i++) {
+        int cx = CP_MARGIN_X + i * CP_CELL_W;
+        int cy = CP_MARGIN_Y;
+
+        /* Draw 32x32 icon centered in cell */
+        int icon_x = cx + (CP_CELL_W - CP_ICON_SIZE) / 2;
+        int icon_y = cy + 2;
+        if (cp_icons[i])
+            wd_icon_32(icon_x, icon_y, cp_icons[i]);
+
+        /* Draw label centered below icon */
+        const char *label = cp_labels[i];
+        int tw = (int)strlen(label) * FONT_UI_WIDTH;
+        int text_x = cx + (CP_CELL_W - tw) / 2;
+        int text_y = icon_y + CP_ICON_SIZE + 2;
+
+        bool selected = (i == st->selected);
+        if (selected) {
+            wd_fill_rect(text_x - 1, text_y - 1,
+                         tw + 2, FONT_UI_HEIGHT + 2, COLOR_BLUE);
+        }
+        wd_text_ui(text_x, text_y, label,
+                   selected ? COLOR_WHITE : COLOR_BLACK,
+                   selected ? COLOR_BLUE : COLOR_WHITE);
+    }
+
+    wd_end();
+}
+
+hwnd_t control_panel_create(void) {
+    /* Initialize icon pointers */
+    cp_icons[0] = cp_disp_icon32;
+    cp_icons[1] = cp_sys_icon32;
+    cp_icons[2] = cp_mouse_icon32;
+    cp_icons[3] = cp_freq_icon32;
+
+    memset(&cp_state, 0, sizeof(cp_state));
+    cp_state.selected = 0;
+    cp_state.last_click_idx = -1;
+
+    int w = CP_MARGIN_X * 2 + CP_ITEMS * CP_CELL_W + THEME_BORDER_WIDTH * 2;
+    int h = CP_MARGIN_Y * 2 + CP_CELL_H + THEME_TITLE_HEIGHT + THEME_BORDER_WIDTH * 2;
+
+    wm_set_pending_icon(cp_icon16);
+    wm_set_pending_icon32(cp_icon32);
+
+    hwnd_t hwnd = wm_create_window(
+        60, 60, w, h,
+        "Control Panel", WSTYLE_DEFAULT,
+        cp_event, cp_paint);
+
+    if (hwnd == HWND_NULL) return HWND_NULL;
+
+    window_t *win = wm_get_window(hwnd);
+    if (win) win->bg_color = COLOR_WHITE;
+
+    cp_state.hwnd = hwnd;
+    wm_set_focus(hwnd);
+    taskbar_invalidate();
+    return hwnd;
+}
+
+const uint8_t *cp_get_icon16(void) { return cp_icon16; }
+const uint8_t *cp_get_icon32(void) { return cp_icon32; }
+
+/*==========================================================================
+ * Common applet helpers
+ *=========================================================================*/
+
+#define APPLET_BTN_W    65
+#define APPLET_BTN_H    22
+#define APPLET_BTN_GAP   8
+
+/* Simple button hit-test */
+static bool btn_hit(int16_t mx, int16_t my,
+                    int16_t bx, int16_t by, int16_t bw, int16_t bh) {
+    return mx >= bx && mx < bx + bw && my >= by && my < by + bh;
+}
+
+/*==========================================================================
+ * Desktop Properties
+ *=========================================================================*/
+
+typedef struct {
+    hwnd_t  hwnd;
+    uint8_t color;      /* selected palette index */
+    uint8_t focus;      /* 0=colors, 1=OK, 2=Cancel */
+} disp_applet_t;
+
+static disp_applet_t disp_app;
+
+#define DISP_W       250
+#define DISP_H       190
+#define DISP_SWATCH_X  20
+#define DISP_SWATCH_Y  30
+#define DISP_SWATCH_SZ 20
+#define DISP_PREVIEW_X  20
+#define DISP_PREVIEW_Y 100
+#define DISP_PREVIEW_W 200
+#define DISP_PREVIEW_H  30
+
+static bool disp_event(hwnd_t hwnd, const window_event_t *ev) {
+    disp_applet_t *d = &disp_app;
+    int client_w = DISP_W - THEME_BORDER_WIDTH * 2;
+    int client_h = DISP_H - THEME_TITLE_HEIGHT - THEME_BORDER_WIDTH * 2;
+    int btn_y = client_h - APPLET_BTN_H - 8;
+    int ok_x = client_w - APPLET_BTN_W * 2 - APPLET_BTN_GAP - 10;
+    int cancel_x = ok_x + APPLET_BTN_W + APPLET_BTN_GAP;
+
+    switch (ev->type) {
+    case WM_CLOSE:
+        wm_destroy_window(hwnd);
+        memset(d, 0, sizeof(*d));
+        return true;
+
+    case WM_LBUTTONDOWN: {
+        int16_t mx = ev->mouse.x, my = ev->mouse.y;
+        /* Color swatch grid: 8x2 */
+        if (my >= DISP_SWATCH_Y && my < DISP_SWATCH_Y + 2 * DISP_SWATCH_SZ &&
+            mx >= DISP_SWATCH_X && mx < DISP_SWATCH_X + 8 * DISP_SWATCH_SZ) {
+            int col = (mx - DISP_SWATCH_X) / DISP_SWATCH_SZ;
+            int row = (my - DISP_SWATCH_Y) / DISP_SWATCH_SZ;
+            d->color = row * 8 + col;
+            if (d->color > 15) d->color = 15;
+            wm_invalidate(hwnd);
+        }
+        return true;
+    }
+
+    case WM_LBUTTONUP: {
+        int16_t mx = ev->mouse.x, my = ev->mouse.y;
+        if (btn_hit(mx, my, ok_x, btn_y, APPLET_BTN_W, APPLET_BTN_H)) {
+            settings_t *set = settings_get();
+            set->desktop_color = d->color;
+            desktop_set_bg_color(d->color);
+            settings_save();
+            wm_force_full_repaint();
+            wm_destroy_window(hwnd);
+            memset(d, 0, sizeof(*d));
+        } else if (btn_hit(mx, my, cancel_x, btn_y, APPLET_BTN_W, APPLET_BTN_H)) {
+            wm_destroy_window(hwnd);
+            memset(d, 0, sizeof(*d));
+        }
+        return true;
+    }
+
+    case WM_KEYDOWN:
+        if (ev->key.scancode == 0x29) { /* Esc — cancel */
+            wm_destroy_window(hwnd);
+            memset(d, 0, sizeof(*d));
+            return true;
+        }
+        if (ev->key.scancode == 0x2B) { /* Tab — cycle focus */
+            d->focus = (d->focus + 1) % 3;
+            wm_invalidate(hwnd);
+            return true;
+        }
+        if (ev->key.scancode == 0x28) { /* Enter */
+            if (d->focus == 2) { /* Cancel */
+                wm_destroy_window(hwnd);
+                memset(d, 0, sizeof(*d));
+            } else { /* OK (focus 0 or 1) */
+                settings_t *set = settings_get();
+                set->desktop_color = d->color;
+                desktop_set_bg_color(d->color);
+                settings_save();
+                wm_force_full_repaint();
+                wm_destroy_window(hwnd);
+                memset(d, 0, sizeof(*d));
+            }
+            return true;
+        }
+        /* Arrow keys — navigate color grid when focus=0 */
+        if (d->focus == 0) {
+            if (ev->key.scancode == 0x4F) { /* Right */
+                d->color = (d->color + 1) & 0x0F;
+                wm_invalidate(hwnd);
+                return true;
+            }
+            if (ev->key.scancode == 0x50) { /* Left */
+                d->color = (d->color + 15) & 0x0F;
+                wm_invalidate(hwnd);
+                return true;
+            }
+            if (ev->key.scancode == 0x51) { /* Down */
+                d->color = (d->color + 8) & 0x0F;
+                wm_invalidate(hwnd);
+                return true;
+            }
+            if (ev->key.scancode == 0x52) { /* Up */
+                d->color = (d->color + 8) & 0x0F;
+                wm_invalidate(hwnd);
+                return true;
+            }
+        }
+        break;
+
+    default:
+        break;
+    }
+    return false;
+}
+
+static void disp_paint(hwnd_t hwnd) {
+    disp_applet_t *d = &disp_app;
+    int client_w = DISP_W - THEME_BORDER_WIDTH * 2;
+    int client_h = DISP_H - THEME_TITLE_HEIGHT - THEME_BORDER_WIDTH * 2;
+
+    wd_begin(hwnd);
+    wd_clear(THEME_BUTTON_FACE);
+
+    wd_text_ui(20, 10, "Desktop background color:",
+               COLOR_BLACK, THEME_BUTTON_FACE);
+
+    /* 8x2 color swatch grid */
+    for (int i = 0; i < 16; i++) {
+        int col = i % 8;
+        int row = i / 8;
+        int sx = DISP_SWATCH_X + col * DISP_SWATCH_SZ;
+        int sy = DISP_SWATCH_Y + row * DISP_SWATCH_SZ;
+        wd_fill_rect(sx + 1, sy + 1, DISP_SWATCH_SZ - 2,
+                     DISP_SWATCH_SZ - 2, (uint8_t)i);
+        /* Highlight selected */
+        if ((uint8_t)i == d->color) {
+            wd_rect(sx, sy, DISP_SWATCH_SZ, DISP_SWATCH_SZ, COLOR_BLACK);
+            wd_rect(sx + 1, sy + 1, DISP_SWATCH_SZ - 2,
+                    DISP_SWATCH_SZ - 2, COLOR_WHITE);
+        } else {
+            wd_rect(sx, sy, DISP_SWATCH_SZ, DISP_SWATCH_SZ,
+                    THEME_BUTTON_FACE);
+        }
+    }
+
+    /* Dotted focus rect around color grid when focused */
+    if (d->focus == 0) {
+        wd_rect(DISP_SWATCH_X - 2, DISP_SWATCH_Y - 2,
+                8 * DISP_SWATCH_SZ + 4, 2 * DISP_SWATCH_SZ + 4,
+                COLOR_BLACK);
+    }
+
+    /* Preview */
+    wd_text_ui(20, DISP_PREVIEW_Y - 14, "Preview:",
+               COLOR_BLACK, THEME_BUTTON_FACE);
+    wd_bevel_rect(DISP_PREVIEW_X, DISP_PREVIEW_Y,
+                  DISP_PREVIEW_W, DISP_PREVIEW_H,
+                  COLOR_DARK_GRAY, COLOR_WHITE, d->color);
+
+    /* Buttons */
+    int btn_y = client_h - APPLET_BTN_H - 8;
+    int ok_x = client_w - APPLET_BTN_W * 2 - APPLET_BTN_GAP - 10;
+    int cancel_x = ok_x + APPLET_BTN_W + APPLET_BTN_GAP;
+    wd_button(ok_x, btn_y, APPLET_BTN_W, APPLET_BTN_H,
+              "OK", d->focus == 1, false);
+    wd_button(cancel_x, btn_y, APPLET_BTN_W, APPLET_BTN_H,
+              "Cancel", d->focus == 2, false);
+
+    wd_end();
+}
+
+static void cp_open_display(void) {
+    if (disp_app.hwnd) {
+        wm_set_focus(disp_app.hwnd);
+        return;
+    }
+    memset(&disp_app, 0, sizeof(disp_app));
+    disp_app.color = settings_get()->desktop_color;
+
+    wm_set_pending_icon(cp_icon16);
+    hwnd_t hwnd = wm_create_window(
+        110, 70, DISP_W, DISP_H,
+        "Desktop Properties", WSTYLE_DIALOG,
+        disp_event, disp_paint);
+    if (hwnd == HWND_NULL) return;
+    window_t *win = wm_get_window(hwnd);
+    if (win) win->bg_color = THEME_BUTTON_FACE;
+    disp_app.hwnd = hwnd;
+    wm_set_focus(hwnd);
+    taskbar_invalidate();
+}
+
+/*==========================================================================
+ * System Properties
+ *=========================================================================*/
+
+typedef struct {
+    hwnd_t hwnd;
+} sys_applet_t;
+
+static sys_applet_t sys_app;
+
+#define SYS_W  260
+#define SYS_H  210
+
+static bool sys_event(hwnd_t hwnd, const window_event_t *ev) {
+    sys_applet_t *s = &sys_app;
+    int client_w = SYS_W - THEME_BORDER_WIDTH * 2;
+    int client_h = SYS_H - THEME_TITLE_HEIGHT - THEME_BORDER_WIDTH * 2;
+    int btn_y = client_h - APPLET_BTN_H - 8;
+    int ok_x = client_w - APPLET_BTN_W - 10;
+
+    switch (ev->type) {
+    case WM_CLOSE:
+        wm_destroy_window(hwnd);
+        memset(s, 0, sizeof(*s));
+        return true;
+
+    case WM_LBUTTONUP: {
+        int16_t mx = ev->mouse.x, my = ev->mouse.y;
+        if (btn_hit(mx, my, ok_x, btn_y, APPLET_BTN_W, APPLET_BTN_H)) {
+            wm_destroy_window(hwnd);
+            memset(s, 0, sizeof(*s));
+        }
+        return true;
+    }
+
+    case WM_KEYDOWN:
+        if (ev->key.scancode == 0x29 || ev->key.scancode == 0x28) {
+            wm_destroy_window(hwnd);
+            memset(s, 0, sizeof(*s));
+            return true;
+        }
+        break;
+
+    default:
+        break;
+    }
+    return false;
+}
+
+static void sys_paint(hwnd_t hwnd) {
+    int client_w = SYS_W - THEME_BORDER_WIDTH * 2;
+    int client_h = SYS_H - THEME_TITLE_HEIGHT - THEME_BORDER_WIDTH * 2;
+
+    wd_begin(hwnd);
+    wd_clear(THEME_BUTTON_FACE);
+
+    char buf[64];
+    int y = 12;
+    int x = 16;
+
+    wd_text_ui(x, y, "FRANK OS", COLOR_BLACK, THEME_BUTTON_FACE);
+    y += FONT_UI_HEIGHT + 8;
+
+    uint32_t cpu_mhz = clock_get_hz(clk_sys) / 1000000;
+    snprintf(buf, sizeof(buf), "CPU: %lu MHz", (unsigned long)cpu_mhz);
+    wd_text_ui(x, y, buf, COLOR_BLACK, THEME_BUTTON_FACE);
+    y += FONT_UI_HEIGHT + 4;
+
+    uint32_t psram_kb = psram_detected_bytes() / 1024;
+    if (psram_kb >= 1024)
+        snprintf(buf, sizeof(buf), "PSRAM: %lu MB",
+                 (unsigned long)(psram_kb / 1024));
+    else
+        snprintf(buf, sizeof(buf), "PSRAM: %lu KB",
+                 (unsigned long)psram_kb);
+    wd_text_ui(x, y, buf, COLOR_BLACK, THEME_BUTTON_FACE);
+    y += FONT_UI_HEIGHT + 4;
+
+    uint32_t ticks = xTaskGetTickCount();
+    uint32_t secs = ticks / configTICK_RATE_HZ;
+    uint32_t mins = secs / 60; secs %= 60;
+    uint32_t hrs = mins / 60; mins %= 60;
+    snprintf(buf, sizeof(buf), "Uptime: %luh %lum %lus",
+             (unsigned long)hrs, (unsigned long)mins, (unsigned long)secs);
+    wd_text_ui(x, y, buf, COLOR_BLACK, THEME_BUTTON_FACE);
+    y += FONT_UI_HEIGHT + 4;
+
+    snprintf(buf, sizeof(buf), "Kernel: FreeRTOS %s",
+             tskKERNEL_VERSION_NUMBER);
+    wd_text_ui(x, y, buf, COLOR_BLACK, THEME_BUTTON_FACE);
+
+    /* OK button */
+    int btn_y = client_h - APPLET_BTN_H - 8;
+    int ok_x = client_w - APPLET_BTN_W - 10;
+    wd_button(ok_x, btn_y, APPLET_BTN_W, APPLET_BTN_H, "OK", true, false);
+
+    wd_end();
+}
+
+static void cp_open_system(void) {
+    if (sys_app.hwnd) {
+        wm_set_focus(sys_app.hwnd);
+        return;
+    }
+    memset(&sys_app, 0, sizeof(sys_app));
+
+    wm_set_pending_icon(cp_icon16);
+    hwnd_t hwnd = wm_create_window(
+        120, 60, SYS_W, SYS_H,
+        "System Properties", WSTYLE_DIALOG,
+        sys_event, sys_paint);
+    if (hwnd == HWND_NULL) return;
+    window_t *win = wm_get_window(hwnd);
+    if (win) win->bg_color = THEME_BUTTON_FACE;
+    sys_app.hwnd = hwnd;
+    wm_set_focus(hwnd);
+    taskbar_invalidate();
+}
+
+/*==========================================================================
+ * Mouse Properties
+ *=========================================================================*/
+
+typedef struct {
+    hwnd_t   hwnd;
+    uint16_t dblclick_ms;   /* 200-800 */
+    bool     dragging;
+    /* Test area */
+    int8_t   test_clicks;
+    uint32_t test_tick;
+    uint8_t  focus;         /* 0=OK, 1=Cancel */
+} mouse_applet_t;
+
+static mouse_applet_t mouse_app;
+
+#define MOUSE_W       260
+#define MOUSE_H       225
+#define MOUSE_TRACK_X  20
+#define MOUSE_TRACK_Y  45
+#define MOUSE_TRACK_W 210
+#define MOUSE_TRACK_H  16
+#define MOUSE_TEST_X   20
+#define MOUSE_TEST_Y   85
+#define MOUSE_TEST_W   80
+#define MOUSE_TEST_H   50
+
+static int mouse_thumb_x(uint16_t ms) {
+    /* Slow (800ms) on left, Fast (200ms) on right */
+    int rel = (800 - ms) * (MOUSE_TRACK_W - 12) / 600;
+    return MOUSE_TRACK_X + rel;
+}
+
+static uint16_t mouse_ms_from_x(int16_t x) {
+    int rel = x - MOUSE_TRACK_X;
+    if (rel < 0) rel = 0;
+    if (rel > MOUSE_TRACK_W - 12) rel = MOUSE_TRACK_W - 12;
+    /* Snap to 100ms steps — left=800ms (slow), right=200ms (fast) */
+    int ms = 800 - (rel * 600 + (MOUSE_TRACK_W - 12) / 2) / (MOUSE_TRACK_W - 12);
+    ms = ((ms + 50) / 100) * 100;
+    if (ms < 200) ms = 200;
+    if (ms > 800) ms = 800;
+    return (uint16_t)ms;
+}
+
+static bool mouse_event(hwnd_t hwnd, const window_event_t *ev) {
+    mouse_applet_t *m = &mouse_app;
+    int client_w = MOUSE_W - THEME_BORDER_WIDTH * 2;
+    int client_h = MOUSE_H - THEME_TITLE_HEIGHT - THEME_BORDER_WIDTH * 2;
+    int btn_y = client_h - APPLET_BTN_H - 8;
+    int ok_x = client_w - APPLET_BTN_W * 2 - APPLET_BTN_GAP - 10;
+    int cancel_x = ok_x + APPLET_BTN_W + APPLET_BTN_GAP;
+
+    switch (ev->type) {
+    case WM_CLOSE:
+        wm_destroy_window(hwnd);
+        memset(m, 0, sizeof(*m));
+        return true;
+
+    case WM_LBUTTONDOWN: {
+        int16_t mx = ev->mouse.x, my = ev->mouse.y;
+        /* Track bar */
+        if (my >= MOUSE_TRACK_Y && my < MOUSE_TRACK_Y + MOUSE_TRACK_H &&
+            mx >= MOUSE_TRACK_X && mx < MOUSE_TRACK_X + MOUSE_TRACK_W) {
+            m->dblclick_ms = mouse_ms_from_x(mx);
+            m->dragging = true;
+            wm_invalidate(hwnd);
+        }
+        return true;
+    }
+
+    case WM_MOUSEMOVE:
+        if (m->dragging) {
+            m->dblclick_ms = mouse_ms_from_x(ev->mouse.x);
+            wm_invalidate(hwnd);
+        }
+        return true;
+
+    case WM_LBUTTONUP: {
+        m->dragging = false;
+        int16_t mx = ev->mouse.x, my = ev->mouse.y;
+
+        /* Test area double-click */
+        if (mx >= MOUSE_TEST_X && mx < MOUSE_TEST_X + MOUSE_TEST_W &&
+            my >= MOUSE_TEST_Y && my < MOUSE_TEST_Y + MOUSE_TEST_H) {
+            uint32_t now = xTaskGetTickCount();
+            if (m->test_clicks > 0 &&
+                (now - m->test_tick) < pdMS_TO_TICKS(m->dblclick_ms)) {
+                m->test_clicks = 2;
+                wm_invalidate(hwnd);
+            } else {
+                m->test_clicks = 1;
+            }
+            m->test_tick = now;
+            return true;
+        }
+
+        /* Buttons */
+        if (btn_hit(mx, my, ok_x, btn_y, APPLET_BTN_W, APPLET_BTN_H)) {
+            settings_t *set = settings_get();
+            set->dblclick_ms = m->dblclick_ms;
+            wm_set_dblclick_speed(m->dblclick_ms);
+            settings_save();
+            wm_destroy_window(hwnd);
+            memset(m, 0, sizeof(*m));
+        } else if (btn_hit(mx, my, cancel_x, btn_y,
+                           APPLET_BTN_W, APPLET_BTN_H)) {
+            wm_destroy_window(hwnd);
+            memset(m, 0, sizeof(*m));
+        }
+        return true;
+    }
+
+    case WM_KEYDOWN:
+        if (ev->key.scancode == 0x29) { /* Esc — cancel */
+            wm_destroy_window(hwnd);
+            memset(m, 0, sizeof(*m));
+            return true;
+        }
+        if (ev->key.scancode == 0x2B) { /* Tab — toggle OK/Cancel */
+            m->focus = 1 - m->focus;
+            wm_invalidate(hwnd);
+            return true;
+        }
+        if (ev->key.scancode == 0x28) { /* Enter */
+            if (m->focus == 1) { /* Cancel */
+                wm_destroy_window(hwnd);
+                memset(m, 0, sizeof(*m));
+            } else { /* OK */
+                settings_t *set = settings_get();
+                set->dblclick_ms = m->dblclick_ms;
+                wm_set_dblclick_speed(m->dblclick_ms);
+                settings_save();
+                wm_destroy_window(hwnd);
+                memset(m, 0, sizeof(*m));
+            }
+            return true;
+        }
+        break;
+
+    default:
+        break;
+    }
+    return false;
+}
+
+static void mouse_paint(hwnd_t hwnd) {
+    mouse_applet_t *m = &mouse_app;
+    int client_w = MOUSE_W - THEME_BORDER_WIDTH * 2;
+    int client_h = MOUSE_H - THEME_TITLE_HEIGHT - THEME_BORDER_WIDTH * 2;
+
+    wd_begin(hwnd);
+    wd_clear(THEME_BUTTON_FACE);
+
+    /* Speed label */
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Double-click speed: %u ms", m->dblclick_ms);
+    wd_text_ui(20, 10, buf, COLOR_BLACK, THEME_BUTTON_FACE);
+
+    /* Labels */
+    wd_text_ui(MOUSE_TRACK_X, MOUSE_TRACK_Y - 14, "Slow",
+               COLOR_BLACK, THEME_BUTTON_FACE);
+    wd_text_ui(MOUSE_TRACK_X + MOUSE_TRACK_W - 4 * FONT_UI_WIDTH,
+               MOUSE_TRACK_Y - 14, "Fast",
+               COLOR_BLACK, THEME_BUTTON_FACE);
+
+    /* Sunken track */
+    wd_bevel_rect(MOUSE_TRACK_X, MOUSE_TRACK_Y,
+                  MOUSE_TRACK_W, MOUSE_TRACK_H,
+                  COLOR_DARK_GRAY, COLOR_WHITE, THEME_BUTTON_FACE);
+
+    /* Raised thumb */
+    int tx = mouse_thumb_x(m->dblclick_ms);
+    wd_bevel_rect(tx, MOUSE_TRACK_Y, 12, MOUSE_TRACK_H,
+                  COLOR_WHITE, COLOR_DARK_GRAY, THEME_BUTTON_FACE);
+
+    /* Test area */
+    wd_text_ui(MOUSE_TEST_X, MOUSE_TEST_Y - 14, "Test area:",
+               COLOR_BLACK, THEME_BUTTON_FACE);
+    wd_bevel_rect(MOUSE_TEST_X, MOUSE_TEST_Y,
+                  MOUSE_TEST_W, MOUSE_TEST_H,
+                  COLOR_DARK_GRAY, COLOR_WHITE, COLOR_WHITE);
+
+    /* Draw folder icon in test area */
+    wd_icon_32(MOUSE_TEST_X + (MOUSE_TEST_W - 32) / 2,
+               MOUSE_TEST_Y + 2, fn_icon32_folder);
+
+    /* Show "OK!" on successful double-click */
+    if (m->test_clicks >= 2) {
+        wd_text_ui(MOUSE_TEST_X + MOUSE_TEST_W + 8,
+                   MOUSE_TEST_Y + (MOUSE_TEST_H - FONT_UI_HEIGHT) / 2,
+                   "OK!", COLOR_GREEN, THEME_BUTTON_FACE);
+    }
+
+    /* Buttons */
+    int btn_y = client_h - APPLET_BTN_H - 8;
+    int ok_x = client_w - APPLET_BTN_W * 2 - APPLET_BTN_GAP - 10;
+    int cancel_x = ok_x + APPLET_BTN_W + APPLET_BTN_GAP;
+    wd_button(ok_x, btn_y, APPLET_BTN_W, APPLET_BTN_H,
+              "OK", m->focus == 0, false);
+    wd_button(cancel_x, btn_y, APPLET_BTN_W, APPLET_BTN_H,
+              "Cancel", m->focus == 1, false);
+
+    wd_end();
+}
+
+static void cp_open_mouse(void) {
+    if (mouse_app.hwnd) {
+        wm_set_focus(mouse_app.hwnd);
+        return;
+    }
+    memset(&mouse_app, 0, sizeof(mouse_app));
+    mouse_app.dblclick_ms = settings_get()->dblclick_ms;
+
+    wm_set_pending_icon(cp_icon16);
+    hwnd_t hwnd = wm_create_window(
+        90, 70, MOUSE_W, MOUSE_H,
+        "Mouse Properties", WSTYLE_DIALOG,
+        mouse_event, mouse_paint);
+    if (hwnd == HWND_NULL) return;
+    window_t *win = wm_get_window(hwnd);
+    if (win) win->bg_color = THEME_BUTTON_FACE;
+    mouse_app.hwnd = hwnd;
+    wm_set_focus(hwnd);
+    taskbar_invalidate();
+}
+
+/*==========================================================================
+ * Frequencies
+ *=========================================================================*/
+
+typedef struct {
+    hwnd_t   hwnd;
+    uint8_t  cpu_sel;    /* 0=252, 1=378, 2=504 */
+    uint8_t  psram_sel;  /* 0=default, 1=133, 2=166 */
+    uint8_t  focus;      /* 0=CPU, 1=PSRAM, 2=OK, 3=Cancel */
+} freq_applet_t;
+
+static freq_applet_t freq_app;
+
+#define FREQ_W  260
+#define FREQ_H  270
+
+static const uint16_t cpu_freqs[] = { 252, 378, 504 };
+static const uint16_t psram_freqs[] = { 0, 133, 166 };
+static const char *cpu_labels[] = { "252 MHz", "378 MHz", "504 MHz" };
+static const char *psram_labels[] = { "Default", "133 MHz", "166 MHz" };
+
+#define FREQ_RADIO_X  30
+#define FREQ_CPU_Y    30
+#define FREQ_PSRAM_Y 115
+#define FREQ_RADIO_H  18
+#define FREQ_RADIO_R   6
+
+static uint8_t freq_cpu_idx(uint16_t mhz) {
+    for (int i = 0; i < 3; i++)
+        if (cpu_freqs[i] == mhz) return i;
+    return 2; /* default to 504 */
+}
+
+static uint8_t freq_psram_idx(uint16_t mhz) {
+    for (int i = 0; i < 3; i++)
+        if (psram_freqs[i] == mhz) return i;
+    return 0;
+}
+
+static bool freq_event(hwnd_t hwnd, const window_event_t *ev) {
+    freq_applet_t *f = &freq_app;
+    int client_w = FREQ_W - THEME_BORDER_WIDTH * 2;
+    int client_h = FREQ_H - THEME_TITLE_HEIGHT - THEME_BORDER_WIDTH * 2;
+    int btn_y = client_h - APPLET_BTN_H - 8;
+    int ok_x = client_w - APPLET_BTN_W * 2 - APPLET_BTN_GAP - 10;
+    int cancel_x = ok_x + APPLET_BTN_W + APPLET_BTN_GAP;
+
+    switch (ev->type) {
+    case WM_CLOSE:
+        wm_destroy_window(hwnd);
+        memset(f, 0, sizeof(*f));
+        return true;
+
+    case WM_LBUTTONDOWN: {
+        int16_t mx = ev->mouse.x, my = ev->mouse.y;
+        /* CPU radio buttons */
+        for (int i = 0; i < 3; i++) {
+            int ry = FREQ_CPU_Y + i * FREQ_RADIO_H;
+            if (mx >= FREQ_RADIO_X && mx < FREQ_RADIO_X + 120 &&
+                my >= ry && my < ry + FREQ_RADIO_H) {
+                f->cpu_sel = i;
+                wm_invalidate(hwnd);
+                return true;
+            }
+        }
+        /* PSRAM radio buttons */
+        for (int i = 0; i < 3; i++) {
+            int ry = FREQ_PSRAM_Y + i * FREQ_RADIO_H;
+            if (mx >= FREQ_RADIO_X && mx < FREQ_RADIO_X + 120 &&
+                my >= ry && my < ry + FREQ_RADIO_H) {
+                f->psram_sel = i;
+                wm_invalidate(hwnd);
+                return true;
+            }
+        }
+        return true;
+    }
+
+    case WM_LBUTTONUP: {
+        int16_t mx = ev->mouse.x, my = ev->mouse.y;
+        if (btn_hit(mx, my, ok_x, btn_y, APPLET_BTN_W, APPLET_BTN_H)) {
+            settings_t *set = settings_get();
+            set->cpu_freq_mhz = cpu_freqs[f->cpu_sel];
+            set->psram_freq_mhz = psram_freqs[f->psram_sel];
+            settings_save();
+            /* Show info dialog */
+            dialog_show(hwnd, "Frequencies",
+                "Changes take effect after reboot.",
+                DLG_ICON_INFO, DLG_BTN_OK);
+            wm_destroy_window(hwnd);
+            memset(f, 0, sizeof(*f));
+        } else if (btn_hit(mx, my, cancel_x, btn_y,
+                           APPLET_BTN_W, APPLET_BTN_H)) {
+            wm_destroy_window(hwnd);
+            memset(f, 0, sizeof(*f));
+        }
+        return true;
+    }
+
+    case WM_KEYDOWN:
+        if (ev->key.scancode == 0x29) { /* Esc — cancel */
+            wm_destroy_window(hwnd);
+            memset(f, 0, sizeof(*f));
+            return true;
+        }
+        if (ev->key.scancode == 0x2B) { /* Tab — cycle focus */
+            f->focus = (f->focus + 1) % 4;
+            wm_invalidate(hwnd);
+            return true;
+        }
+        if (ev->key.scancode == 0x28) { /* Enter */
+            if (f->focus == 3) { /* Cancel */
+                wm_destroy_window(hwnd);
+                memset(f, 0, sizeof(*f));
+            } else { /* OK (focus 0, 1, or 2) */
+                settings_t *set = settings_get();
+                set->cpu_freq_mhz = cpu_freqs[f->cpu_sel];
+                set->psram_freq_mhz = psram_freqs[f->psram_sel];
+                settings_save();
+                dialog_show(HWND_NULL, "Frequencies",
+                    "Changes take effect after reboot.",
+                    DLG_ICON_INFO, DLG_BTN_OK);
+                wm_destroy_window(hwnd);
+                memset(f, 0, sizeof(*f));
+            }
+            return true;
+        }
+        /* Up/Down arrows — change radio selection when focused on a group */
+        if (f->focus == 0) { /* CPU group */
+            if (ev->key.scancode == 0x52 /* Up */) {
+                if (f->cpu_sel > 0) f->cpu_sel--;
+                wm_invalidate(hwnd);
+                return true;
+            }
+            if (ev->key.scancode == 0x51 /* Down */) {
+                if (f->cpu_sel < 2) f->cpu_sel++;
+                wm_invalidate(hwnd);
+                return true;
+            }
+        }
+        if (f->focus == 1) { /* PSRAM group */
+            if (ev->key.scancode == 0x52 /* Up */) {
+                if (f->psram_sel > 0) f->psram_sel--;
+                wm_invalidate(hwnd);
+                return true;
+            }
+            if (ev->key.scancode == 0x51 /* Down */) {
+                if (f->psram_sel < 2) f->psram_sel++;
+                wm_invalidate(hwnd);
+                return true;
+            }
+        }
+        break;
+
+    default:
+        break;
+    }
+    return false;
+}
+
+/* Draw a radio button circle at (x, y) with given state */
+static void draw_radio(hwnd_t hwnd, int16_t x, int16_t y,
+                       bool selected, const char *label) {
+    /* Outer circle approximation: small sunken square with round corners */
+    wd_bevel_rect(x, y + 2, 12, 12, COLOR_DARK_GRAY, COLOR_WHITE, COLOR_WHITE);
+    if (selected) {
+        /* Inner filled dot */
+        wd_fill_rect(x + 4, y + 6, 4, 4, COLOR_BLACK);
+    }
+    wd_text_ui(x + 16, y + 2, label, COLOR_BLACK, THEME_BUTTON_FACE);
+}
+
+static void freq_paint(hwnd_t hwnd) {
+    freq_applet_t *f = &freq_app;
+    int client_w = FREQ_W - THEME_BORDER_WIDTH * 2;
+    int client_h = FREQ_H - THEME_TITLE_HEIGHT - THEME_BORDER_WIDTH * 2;
+
+    wd_begin(hwnd);
+    wd_clear(THEME_BUTTON_FACE);
+
+    /* CPU frequency group */
+    wd_text_ui(16, 14, "CPU Frequency:", COLOR_BLACK, THEME_BUTTON_FACE);
+    for (int i = 0; i < 3; i++) {
+        draw_radio(hwnd, FREQ_RADIO_X,
+                   FREQ_CPU_Y + i * FREQ_RADIO_H,
+                   f->cpu_sel == i, cpu_labels[i]);
+    }
+    /* Focus indicator for CPU group */
+    if (f->focus == 0) {
+        wd_rect(FREQ_RADIO_X - 4, FREQ_CPU_Y - 2,
+                130, 3 * FREQ_RADIO_H + 4, COLOR_BLACK);
+    }
+
+    /* PSRAM frequency group */
+    wd_text_ui(16, FREQ_PSRAM_Y - 16, "PSRAM Frequency:",
+               COLOR_BLACK, THEME_BUTTON_FACE);
+    for (int i = 0; i < 3; i++) {
+        draw_radio(hwnd, FREQ_RADIO_X,
+                   FREQ_PSRAM_Y + i * FREQ_RADIO_H,
+                   f->psram_sel == i, psram_labels[i]);
+    }
+    /* Focus indicator for PSRAM group */
+    if (f->focus == 1) {
+        wd_rect(FREQ_RADIO_X - 4, FREQ_PSRAM_Y - 2,
+                130, 3 * FREQ_RADIO_H + 4, COLOR_BLACK);
+    }
+
+    /* Reboot notice */
+    wd_text_ui(16, FREQ_PSRAM_Y + 3 * FREQ_RADIO_H + 4,
+               "Changes take effect after reboot.",
+               COLOR_DARK_GRAY, THEME_BUTTON_FACE);
+
+    /* Buttons */
+    int btn_y = client_h - APPLET_BTN_H - 8;
+    int ok_x = client_w - APPLET_BTN_W * 2 - APPLET_BTN_GAP - 10;
+    int cancel_x = ok_x + APPLET_BTN_W + APPLET_BTN_GAP;
+    wd_button(ok_x, btn_y, APPLET_BTN_W, APPLET_BTN_H,
+              "OK", f->focus == 2, false);
+    wd_button(cancel_x, btn_y, APPLET_BTN_W, APPLET_BTN_H,
+              "Cancel", f->focus == 3, false);
+
+    wd_end();
+}
+
+static void cp_open_freq(void) {
+    if (freq_app.hwnd) {
+        wm_set_focus(freq_app.hwnd);
+        return;
+    }
+    memset(&freq_app, 0, sizeof(freq_app));
+    freq_app.cpu_sel = freq_cpu_idx(settings_get()->cpu_freq_mhz);
+    freq_app.psram_sel = freq_psram_idx(settings_get()->psram_freq_mhz);
+
+    wm_set_pending_icon(cp_icon16);
+    hwnd_t hwnd = wm_create_window(
+        80, 50, FREQ_W, FREQ_H,
+        "Frequencies", WSTYLE_DIALOG,
+        freq_event, freq_paint);
+    if (hwnd == HWND_NULL) return;
+    window_t *win = wm_get_window(hwnd);
+    if (win) win->bg_color = THEME_BUTTON_FACE;
+    freq_app.hwnd = hwnd;
+    wm_set_focus(hwnd);
+    taskbar_invalidate();
+}
