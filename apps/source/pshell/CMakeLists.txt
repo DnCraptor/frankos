@@ -76,7 +76,7 @@ pico_enable_stdio_usb(${PROJECT_NAME} 0)
 # ── Icon + .inf generation ───────────────────────────────────────────────────
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-set(ICON_ICO "${CMAKE_CURRENT_SOURCE_DIR}/../../../assets/icons/w2k_ms-dos_application.ico")
+set(ICON_ICO "${CMAKE_CURRENT_SOURCE_DIR}/pshell.ico")
 set(CONVERT_ICO_16 "${CMAKE_CURRENT_SOURCE_DIR}/../../../tools/convert_ico_16.py")
 
 add_custom_command(

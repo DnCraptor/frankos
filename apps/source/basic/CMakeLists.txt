@@ -192,7 +192,7 @@ target_link_libraries(basic
 )
 
 # ── Icon + .inf generation ───────────────────────────────────────────────────
-set(ICON_ICO "${CMAKE_CURRENT_SOURCE_DIR}/../../../assets/icons/w2k_text_document.ico")
+set(ICON_ICO "${CMAKE_CURRENT_SOURCE_DIR}/basic.ico")
 set(CONVERT_ICO_16 "${CMAKE_CURRENT_SOURCE_DIR}/../../../tools/convert_ico_16.py")
 
 add_custom_command(
