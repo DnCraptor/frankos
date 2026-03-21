@@ -1005,7 +1005,13 @@ a3:
         goto e2;
     }
     f_lseek(f, strtab_off);
-    char* strtab = (char*)pvPortMalloc(strtab_len);
+    /* Allocate .strtab in PSRAM to keep SRAM free for code sections.
+     * It's only used for symbol name lookups (read-only, not hot path). */
+    char* strtab = NULL;
+    if (psram_is_available())
+        strtab = (char*)psram_alloc(strtab_len);
+    if (!strtab)
+        strtab = (char*)pvPortMalloc(strtab_len);
     if (!strtab) {
 a4:
         vPortFree(symtab);
@@ -1044,7 +1050,7 @@ a5:
             if (psram_is_available()) psram_free(symtab_cache);
             else vPortFree(symtab_cache);
         }
-        vPortFree(strtab);
+        psram_free(strtab); /* handles both SRAM and PSRAM pointers */
         goto a4;
     }
     uint32_t _init_idx = 0xFFFFFFFF;
@@ -1225,7 +1231,7 @@ e8:
     }
     vPortFree(psym);
 e3:
-    vPortFree(strtab);
+    psram_free(strtab); /* handles both SRAM and PSRAM pointers */
 e2:
     vPortFree(symtab);
 e11:
