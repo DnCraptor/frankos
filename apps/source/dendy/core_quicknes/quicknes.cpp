@@ -300,4 +300,13 @@ void qnes_close(void)
         s->emu->close();
         s->rom_loaded = false;
     }
+    if (s->save_load_state) {
+        delete s->save_load_state;
+        s->save_load_state = NULL;
+    }
+    if (s->emu) {
+        delete s->emu;
+        s->emu = NULL;
+    }
+    s->initialized = false;
 }

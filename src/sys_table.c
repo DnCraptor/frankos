@@ -712,6 +712,7 @@ unsigned long __in_systable() __aligned(4096) sys_table_ptrs[] = {
     vPortFree,                // 530
     display_request_mode,     // 531
     &display_compositor_idle, // 532
+    wm_force_full_repaint,    // 533
     // TODO:
     0
 };

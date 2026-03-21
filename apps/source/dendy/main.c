@@ -71,8 +71,6 @@ typedef struct {
     void    *qnes_state;     /* MUST BE FIRST — quicknes.cpp reads r9[0] */
     volatile bool closing;
     uint8_t  key_state[256]; /* HID scancode -> pressed (1/0) */
-    int      esc_count;      /* consecutive ESC presses for double-ESC exit */
-    uint32_t esc_tick;       /* tick of first ESC press */
     bool     rom_loaded;
     void    *app_task;       /* FreeRTOS task handle */
     uint8_t *rom_buf;        /* ROM data buffer (heap-allocated) */
@@ -176,30 +174,11 @@ static void process_input(void) {
         if (ev.hid_code < 256)
             G->key_state[ev.hid_code] = ev.pressed ? 1 : 0;
 
-        /* Double-ESC exit detection */
+        /* ESC = exit */
         if (ev.hid_code == HID_KEY_ESCAPE && ev.pressed) {
-            uint32_t now = xTaskGetTickCount();
-            if (G->esc_count == 0) {
-                G->esc_count = 1;
-                G->esc_tick = now;
-            } else {
-                /* Second ESC within 500ms = exit */
-                if ((now - G->esc_tick) < pdMS_TO_TICKS(500)) {
-                    G->closing = true;
-                    return;
-                }
-                /* Too slow — restart */
-                G->esc_count = 1;
-                G->esc_tick = now;
-            }
+            G->closing = true;
+            return;
         }
-    }
-
-    /* Reset ESC counter if timeout expired */
-    if (G->esc_count > 0) {
-        uint32_t now = xTaskGetTickCount();
-        if ((now - G->esc_tick) >= pdMS_TO_TICKS(500))
-            G->esc_count = 0;
     }
 }
 
@@ -353,16 +332,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* Switch to fullscreen 320x240x256 video mode.
-     * First: signal mode change so compositor enters bypass loop.
-     * Wait for it to yield, THEN do the actual DVI reconfiguration.
-     * This avoids the race where compositor writes to framebuffer
-     * while DVI hardware is being reconfigured. */
-    serial_printf("dendy: switching to 320x240x256\n");
-
-    serial_printf("dendy: switching DVI\n");
+    /* Switch to fullscreen 320x240x256 video mode */
     if (display_set_video_mode(VIDEO_MODE_320x240x256) != 0) {
-        serial_printf("dendy: failed to set video mode\n");
         qnes_close();
         vPortFree(G->audio_buf);
         vPortFree(G->qnes_state);
@@ -382,56 +353,31 @@ int main(int argc, char **argv) {
     /* Clear screen to black */
     display_clear(0);
 
-    serial_printf("dendy: entering main loop\n");
-
     /* Main emulation loop */
-    uint32_t frame_count = 0;
-    uint32_t t0 = xTaskGetTickCount();
-    uint32_t t_emu = 0, t_render = 0, t_audio = 0;
     while (!G->closing) {
         process_input();
         if (G->closing) break;
 
-        uint32_t ta = xTaskGetTickCount();
         int joypad = build_joypad();
         qnes_emulate_frame(joypad, 0);
-        uint32_t tb = xTaskGetTickCount();
 
         update_display_palette();
         render_frame();
-        uint32_t tc = xTaskGetTickCount();
-
         push_audio();
-        uint32_t td = xTaskGetTickCount();
-
-        t_emu += tb - ta;
-        t_render += tc - tb;
-        t_audio += td - tc;
-
-        frame_count++;
-        if (frame_count == 60) {
-            uint32_t elapsed = xTaskGetTickCount() - t0;
-            serial_printf("dendy: 60f %lums emu=%lu rnd=%lu aud=%lu\n",
-                (unsigned long)elapsed, (unsigned long)t_emu,
-                (unsigned long)t_render, (unsigned long)t_audio);
-            frame_count = 0;
-            t_emu = t_render = t_audio = 0;
-            t0 = xTaskGetTickCount();
-        }
     }
-
-    serial_printf("dendy: exiting, cleaning up...\n");
 
     /* Cleanup */
     qnes_close();
     pcm_cleanup();
 
-    serial_printf("dendy: restoring video mode\n");
-
     display_set_video_mode(VIDEO_MODE_640x480x16);
+    /* Force full desktop repaint — ensures no black regions remain */
+    {
+        typedef void (*fn_t)(void);
+        ((fn_t)_sys_table_ptrs[533])();  /* wm_force_full_repaint */
+    }
     taskbar_invalidate();
 
-    serial_printf("dendy: video mode restored, returning\n");
 
     vPortFree(G->audio_buf);
     vPortFree(G->qnes_state);

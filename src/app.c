@@ -1128,10 +1128,17 @@ a6:
             }
         }
         size_t free_heap = xPortGetFreeHeapSize();
-        g_sram_for_code = (code_alloc + (4 << 10) <= free_heap);
-        printf("[load_app] code=%u free=%u -> %s\n",
-               (unsigned)code_alloc, (unsigned)free_heap,
-               g_sram_for_code ? "SRAM" : "PSRAM");
+        g_sram_for_code = (code_alloc <= free_heap);
+        {
+            /* Also check largest free block — fragmentation can prevent
+             * contiguous allocation even when total free is sufficient. */
+            HeapStats_t hs;
+            vPortGetHeapStats(&hs);
+            printf("[load_app] code=%u free=%u largest=%u -> %s\n",
+                   (unsigned)code_alloc, (unsigned)free_heap,
+                   (unsigned)hs.xSizeOfLargestFreeBlockInBytes,
+                   g_sram_for_code ? "SRAM" : "PSRAM");
+        }
     }
 
     bootb_ctx->req_ver_fn = load_sec2mem_wrapper(pctx, req_idx, try_to_use_flash);
