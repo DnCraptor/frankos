@@ -60,8 +60,9 @@
 #define NES_HEIGHT  240
 #define NES_PITCH   (256 + 16)   /* QuickNES pixel buffer pitch */
 
-/* Audio — match standalone murmnes sample rate */
-#define NES_SAMPLE_RATE 44100
+/* Audio — 22050 Hz is enough for NES sound quality and halves
+ * the audio processing overhead vs 44100 Hz. */
+#define NES_SAMPLE_RATE 22050
 
 /* ======================================================================
  * App globals struct — ALL mutable state lives here, heap-allocated.
@@ -240,17 +241,22 @@ static bool load_rom(const char *path) {
  * ====================================================================== */
 
 static void push_audio(void) {
-    int16_t tmp[512];
-    long n = qnes_read_samples(tmp, 512);
-    if (n <= 0) return;
-
-    /* Interleave mono -> stereo */
+    int16_t tmp[256];
     int16_t *stereo = G->audio_buf;
-    for (long i = 0; i < n; i++) {
-        stereo[i * 2]     = tmp[i];
-        stereo[i * 2 + 1] = tmp[i];
+
+    /* Drain all available samples (NES may produce more than one
+     * buffer's worth per frame depending on sample rate). */
+    for (;;) {
+        long n = qnes_read_samples(tmp, 256);
+        if (n <= 0) break;
+
+        /* Interleave mono -> stereo */
+        for (long i = 0; i < n; i++) {
+            stereo[i * 2]     = tmp[i];
+            stereo[i * 2 + 1] = tmp[i];
+        }
+        pcm_write(stereo, (int)n);
     }
-    pcm_write(stereo, (int)(n));
 }
 
 /* ======================================================================
@@ -298,7 +304,7 @@ int main(int argc, char **argv) {
     }
 
     /* Allocate stereo audio buffer */
-    G->audio_buf = (int16_t *)pvPortMalloc(512 * 2 * sizeof(int16_t));
+    G->audio_buf = (int16_t *)pvPortMalloc(256 * 2 * sizeof(int16_t));
     if (!G->audio_buf) {
         serial_printf("dendy: audio buf alloc failed\n");
         vPortFree(G->qnes_state);
