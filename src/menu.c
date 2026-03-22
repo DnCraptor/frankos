@@ -503,10 +503,10 @@ void menu_popup_show(hwnd_t owner, int16_t sx, int16_t sy,
     /* Position: try to fit on screen */
     popup_x = sx;
     popup_y = sy;
-    if (popup_x + popup_w + MENU_SHADOW > DISPLAY_WIDTH)
-        popup_x = DISPLAY_WIDTH - popup_w - MENU_SHADOW;
-    if (popup_y + popup_h + MENU_SHADOW > FB_HEIGHT)
-        popup_y = FB_HEIGHT - popup_h - MENU_SHADOW;
+    if (popup_x + popup_w + MENU_SHADOW > display_width)
+        popup_x = display_width - popup_w - MENU_SHADOW;
+    if (popup_y + popup_h + MENU_SHADOW > display_height)
+        popup_y = display_height - popup_h - MENU_SHADOW;
     if (popup_x < 0) popup_x = 0;
     if (popup_y < 0) popup_y = 0;
 
@@ -568,10 +568,10 @@ static void popup_sub_open(void) {
     popup_sub_y = iy;
 
     /* Clamp to screen */
-    if (popup_sub_x + popup_sub_w + MENU_SHADOW > DISPLAY_WIDTH)
+    if (popup_sub_x + popup_sub_w + MENU_SHADOW > display_width)
         popup_sub_x = popup_x - popup_sub_w + 2;  /* flip to left */
-    if (popup_sub_y + popup_sub_h + MENU_SHADOW > FB_HEIGHT)
-        popup_sub_y = FB_HEIGHT - popup_sub_h - MENU_SHADOW;
+    if (popup_sub_y + popup_sub_h + MENU_SHADOW > display_height)
+        popup_sub_y = display_height - popup_sub_h - MENU_SHADOW;
     if (popup_sub_x < 0) popup_sub_x = 0;
     if (popup_sub_y < 0) popup_sub_y = 0;
 

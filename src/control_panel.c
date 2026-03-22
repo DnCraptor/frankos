@@ -87,7 +87,6 @@ static void cp_open_display(void);
 static void cp_open_system(void);
 static void cp_open_mouse(void);
 static void cp_open_freq(void);
-
 static void cp_open_applet(int idx) {
     switch (idx) {
     case 0: cp_open_display(); break;
@@ -257,15 +256,16 @@ static bool btn_hit(int16_t mx, int16_t my,
  *=========================================================================*/
 
 typedef struct {
-    hwnd_t  hwnd;
-    uint8_t color;      /* selected palette index */
-    uint8_t focus;      /* 0=colors, 1=OK, 2=Cancel */
+    hwnd_t       hwnd;
+    uint8_t      color;      /* selected palette index */
+    uint8_t      focus;      /* 0=colors, 1=theme, 2=OK, 3=Cancel */
+    radiogroup_t theme_rg;
 } disp_applet_t;
 
 static disp_applet_t disp_app;
 
 #define DISP_W       250
-#define DISP_H       190
+#define DISP_H       250
 #define DISP_SWATCH_X  20
 #define DISP_SWATCH_Y  30
 #define DISP_SWATCH_SZ 20
@@ -273,6 +273,19 @@ static disp_applet_t disp_app;
 #define DISP_PREVIEW_Y 100
 #define DISP_PREVIEW_W 200
 #define DISP_PREVIEW_H  30
+#define DISP_THEME_X    30
+#define DISP_THEME_Y   155
+#define DISP_THEME_H    18
+
+static void disp_apply_ok(disp_applet_t *d) {
+    settings_t *set = settings_get();
+    set->desktop_color = d->color;
+    set->theme_id = d->theme_rg.selected;
+    desktop_set_bg_color(d->color);
+    theme_set(d->theme_rg.selected);
+    settings_save();
+    wm_force_full_repaint();
+}
 
 static bool disp_event(hwnd_t hwnd, const window_event_t *ev) {
     disp_applet_t *d = &disp_app;
@@ -299,17 +312,18 @@ static bool disp_event(hwnd_t hwnd, const window_event_t *ev) {
             if (d->color > 15) d->color = 15;
             wm_invalidate(hwnd);
         }
+        /* Theme radio group */
+        uint8_t new_sel;
+        if (radiogroup_event(&d->theme_rg, ev, &new_sel)) {
+            wm_invalidate(hwnd);
+        }
         return true;
     }
 
     case WM_LBUTTONUP: {
         int16_t mx = ev->mouse.x, my = ev->mouse.y;
         if (btn_hit(mx, my, ok_x, btn_y, APPLET_BTN_W, APPLET_BTN_H)) {
-            settings_t *set = settings_get();
-            set->desktop_color = d->color;
-            desktop_set_bg_color(d->color);
-            settings_save();
-            wm_force_full_repaint();
+            disp_apply_ok(d);
             wm_destroy_window(hwnd);
             memset(d, 0, sizeof(*d));
         } else if (btn_hit(mx, my, cancel_x, btn_y, APPLET_BTN_W, APPLET_BTN_H)) {
@@ -326,20 +340,16 @@ static bool disp_event(hwnd_t hwnd, const window_event_t *ev) {
             return true;
         }
         if (ev->key.scancode == 0x2B) { /* Tab — cycle focus */
-            d->focus = (d->focus + 1) % 3;
+            d->focus = (d->focus + 1) % 4;
             wm_invalidate(hwnd);
             return true;
         }
         if (ev->key.scancode == 0x28) { /* Enter */
-            if (d->focus == 2) { /* Cancel */
+            if (d->focus == 3) { /* Cancel */
                 wm_destroy_window(hwnd);
                 memset(d, 0, sizeof(*d));
-            } else { /* OK (focus 0 or 1) */
-                settings_t *set = settings_get();
-                set->desktop_color = d->color;
-                desktop_set_bg_color(d->color);
-                settings_save();
-                wm_force_full_repaint();
+            } else { /* OK */
+                disp_apply_ok(d);
                 wm_destroy_window(hwnd);
                 memset(d, 0, sizeof(*d));
             }
@@ -368,6 +378,20 @@ static bool disp_event(hwnd_t hwnd, const window_event_t *ev) {
                 return true;
             }
         }
+        /* Arrow keys — navigate theme radios when focus=1 */
+        if (d->focus == 1) {
+            if (ev->key.scancode == 0x52 /* Up */) {
+                if (d->theme_rg.selected > 0) d->theme_rg.selected--;
+                wm_invalidate(hwnd);
+                return true;
+            }
+            if (ev->key.scancode == 0x51 /* Down */) {
+                if (d->theme_rg.selected < THEME_COUNT - 1)
+                    d->theme_rg.selected++;
+                wm_invalidate(hwnd);
+                return true;
+            }
+        }
         break;
 
     default:
@@ -384,7 +408,7 @@ static void disp_paint(hwnd_t hwnd) {
     wd_begin(hwnd);
     wd_clear(THEME_BUTTON_FACE);
 
-    wd_text_ui(20, 10, "Desktop background color:",
+    wd_text_ui(20, 10, "Background color:",
                COLOR_BLACK, THEME_BUTTON_FACE);
 
     /* 8x2 color swatch grid */
@@ -420,14 +444,23 @@ static void disp_paint(hwnd_t hwnd) {
                   DISP_PREVIEW_W, DISP_PREVIEW_H,
                   COLOR_DARK_GRAY, COLOR_WHITE, d->color);
 
+    /* Theme selector */
+    wd_text_ui(20, DISP_THEME_Y - 14, "Window theme:",
+               COLOR_BLACK, THEME_BUTTON_FACE);
+    radiogroup_paint(&d->theme_rg);
+    if (d->focus == 1) {
+        wd_rect(DISP_THEME_X - 4, DISP_THEME_Y - 2,
+                160, THEME_COUNT * DISP_THEME_H + 4, COLOR_BLACK);
+    }
+
     /* Buttons */
     int btn_y = client_h - APPLET_BTN_H - 8;
     int ok_x = client_w - APPLET_BTN_W * 2 - APPLET_BTN_GAP - 10;
     int cancel_x = ok_x + APPLET_BTN_W + APPLET_BTN_GAP;
     wd_button(ok_x, btn_y, APPLET_BTN_W, APPLET_BTN_H,
-              "OK", d->focus == 1, false);
+              "OK", d->focus == 2, false);
     wd_button(cancel_x, btn_y, APPLET_BTN_W, APPLET_BTN_H,
-              "Cancel", d->focus == 2, false);
+              "Cancel", d->focus == 3, false);
 
     wd_end();
 }
@@ -439,6 +472,15 @@ static void cp_open_display(void) {
     }
     memset(&disp_app, 0, sizeof(disp_app));
     disp_app.color = settings_get()->desktop_color;
+
+    /* Theme radio group */
+    static const char *theme_labels[THEME_COUNT];
+    for (int i = 0; i < THEME_COUNT; i++)
+        theme_labels[i] = builtin_themes[i].name;
+    radiogroup_init(&disp_app.theme_rg, DISP_THEME_X, DISP_THEME_Y,
+                    THEME_COUNT, DISP_THEME_H);
+    radiogroup_set_labels(&disp_app.theme_rg, theme_labels);
+    disp_app.theme_rg.selected = theme_get_id();
 
     wm_set_pending_icon(cp_icon16);
     hwnd_t hwnd = wm_create_window(
@@ -1007,3 +1049,4 @@ static void cp_open_freq(void) {
     wm_set_focus(hwnd);
     taskbar_invalidate();
 }
+

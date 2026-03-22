@@ -56,10 +56,10 @@ void wd_begin(hwnd_t hwnd) {
         draw_ctx.ch += draw_ctx.oy;
         draw_ctx.oy = 0;
     }
-    if (draw_ctx.ox + draw_ctx.cw > DISPLAY_WIDTH)
-        draw_ctx.cw = DISPLAY_WIDTH - draw_ctx.ox;
-    if (draw_ctx.oy + draw_ctx.ch > FB_HEIGHT)
-        draw_ctx.ch = FB_HEIGHT - draw_ctx.oy;
+    if (draw_ctx.ox + draw_ctx.cw > display_width)
+        draw_ctx.cw = display_width - draw_ctx.ox;
+    if (draw_ctx.oy + draw_ctx.ch > display_height)
+        draw_ctx.ch = display_height - draw_ctx.oy;
 
     if (draw_ctx.cw <= 0 || draw_ctx.ch <= 0) {
         draw_ctx.active = false;
@@ -120,11 +120,11 @@ void wd_fill_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint8_t color) {
     int span = x1 - x0;
     int rows = y1 - y0;
     if (sx < 0) { span += sx; sx = 0; }
-    if (sx + span > DISPLAY_WIDTH) span = DISPLAY_WIDTH - sx;
+    if (sx + span > display_width) span = display_width - sx;
     if (sy < 0) { rows += sy; sy = 0; }
-    if (sy + rows > FB_HEIGHT) rows = FB_HEIGHT - sy;
+    if (sy + rows > display_height) rows = display_height - sy;
     if (span <= 0 || rows <= 0) return;
-    color &= 0x0F;
+    if (display_bpp == 4) color &= 0x0F;
     for (int py = 0; py < rows; py++)
         display_hline_fast(sx, sy + py, span, color);
 }
@@ -230,10 +230,13 @@ uint8_t *wd_fb_ptr(int16_t cx, int16_t cy, int16_t *stride) {
     if (!draw_ctx.active) return NULL;
     int16_t sx = draw_ctx.ox + cx;
     int16_t sy = draw_ctx.oy + cy;
-    if (sx < 0 || sy < 0 || sy >= FB_HEIGHT || sx >= DISPLAY_WIDTH)
+    if (sx < 0 || sy < 0 || sy >= display_height || sx >= display_width)
         return NULL;
-    *stride = FB_STRIDE;
-    return &display_draw_buffer_ptr[sy * FB_STRIDE + (sx >> 1)];
+    *stride = display_fb_stride;
+    if (display_bpp == 8)
+        return &display_draw_buffer_ptr[sy * display_fb_stride + sx];
+    else
+        return &display_draw_buffer_ptr[sy * display_fb_stride + (sx >> 1)];
 }
 
 void wd_get_clip_size(int16_t *w, int16_t *h) {

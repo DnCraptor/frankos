@@ -427,7 +427,7 @@ static hwnd_t fnd_open(hwnd_t parent, bool replace_mode) {
 
     /* Position near top-right of screen */
     int work_h = taskbar_work_area_height();
-    int x = DISPLAY_WIDTH - outer_w - 20;
+    int x = display_width - outer_w - 20;
     int y = 40;
     if (x < 0) x = 0;
     if (y + outer_h > work_h) y = work_h - outer_h;

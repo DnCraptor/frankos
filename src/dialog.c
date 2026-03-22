@@ -88,8 +88,8 @@ static void dialog_draw_icon(hwnd_t hwnd, int x, int y, uint8_t icon_type) {
             if (c != 0xFF) {
                 int sx = co.x + x + col;
                 int sy = co.y + y + row;
-                if ((unsigned)sx < (unsigned)DISPLAY_WIDTH &&
-                    (unsigned)sy < (unsigned)FB_HEIGHT)
+                if ((unsigned)sx < (unsigned)display_width &&
+                    (unsigned)sy < (unsigned)display_height)
                     display_set_pixel(sx, sy, c);
             }
         }
@@ -389,7 +389,7 @@ hwnd_t dialog_show(hwnd_t parent, const char *title, const char *text,
 
     /* Center on screen (above taskbar) */
     int work_h = taskbar_work_area_height();
-    int x = (DISPLAY_WIDTH - outer_w) / 2;
+    int x = (display_width - outer_w) / 2;
     int y = (work_h - outer_h) / 2;
     if (x < 0) x = 0;
     if (y < 0) y = 0;
@@ -756,7 +756,7 @@ hwnd_t dialog_input_show(hwnd_t parent, const char *title,
     int outer_h = client_h + THEME_TITLE_HEIGHT + 2 * THEME_BORDER_WIDTH;
 
     int work_h = taskbar_work_area_height();
-    int x = (DISPLAY_WIDTH - outer_w) / 2;
+    int x = (display_width - outer_w) / 2;
     int y = (work_h - outer_h) / 2;
     if (x < 0) x = 0;
     if (y < 0) y = 0;

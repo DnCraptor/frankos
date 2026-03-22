@@ -193,12 +193,12 @@ void cursor_draw(int16_t x, int16_t y) {
 
     for (int row = 0; row < c->h; row++) {
         int py = oy + row;
-        if (py < 0 || py >= DISPLAY_HEIGHT) continue;
+        if (py < 0 || py >= (int)display_height) continue;
         for (int col = 0; col < c->w; col++) {
             uint8_t px_val = c->bitmap[row * c->w + col];
             if (px_val == 0) continue;
             int px = ox + col;
-            if (px < 0 || px >= DISPLAY_WIDTH) continue;
+            if (px < 0 || px >= (int)display_width) continue;
             display_set_pixel(px, py,
                               (px_val == 1) ? COLOR_BLACK : COLOR_WHITE);
         }
@@ -215,8 +215,8 @@ void cursor_get_bounds(int16_t x, int16_t y,
     if (ly < 0) ly = 0;
     int16_t rx = lx + c->w - 1;
     int16_t ry = ly + c->h - 1;
-    if (rx >= DISPLAY_WIDTH)  rx = DISPLAY_WIDTH  - 1;
-    if (ry >= DISPLAY_HEIGHT) ry = DISPLAY_HEIGHT - 1;
+    if (rx >= (int16_t)display_width)  rx = (int16_t)display_width  - 1;
+    if (ry >= (int16_t)display_height) ry = (int16_t)display_height - 1;
     *x0 = lx; *y0 = ly; *x1 = rx; *y1 = ry;
 }
 
@@ -230,7 +230,10 @@ void cursor_get_bounds(int16_t x, int16_t y,
  * position directly on the show buffer — no compositor involvement needed.
  *=========================================================================*/
 
-#define OVERLAY_MAX_BPR   12   /* max bytes per row: ceil(21/2) + 1 for alignment */
+/* Save buffer sized for the largest cursor in the largest-bpp mode:
+ * 8bpp: 21 pixels wide * 22 rows = 462 bytes
+ * 4bpp: ceil(21/2)+1 * 22 rows = 264 bytes */
+#define OVERLAY_MAX_BPR   22   /* max bytes per row in 8bpp (EW cursor = 21px) */
 #define OVERLAY_MAX_ROWS  22   /* tallest cursor: wait (22 rows) */
 #define OVERLAY_SAVE_SIZE (OVERLAY_MAX_BPR * OVERLAY_MAX_ROWS)
 
@@ -255,20 +258,29 @@ void cursor_overlay_stamp(int16_t x, int16_t y) {
     int16_t y0 = oy < 0 ? 0 : oy;
     int16_t x1 = ox + c->w - 1;
     int16_t y1 = oy + c->h - 1;
-    if (x1 >= DISPLAY_WIDTH)  x1 = DISPLAY_WIDTH  - 1;
-    if (y1 >= DISPLAY_HEIGHT) y1 = DISPLAY_HEIGHT - 1;
+    if (x1 >= (int16_t)display_width)  x1 = (int16_t)display_width  - 1;
+    if (y1 >= (int16_t)display_height) y1 = (int16_t)display_height - 1;
 
     if (x0 > x1 || y0 > y1) {
         overlay.valid = false;
         return;
     }
 
-    /* Byte range in framebuffer */
-    int16_t byte_x0 = x0 >> 1;
-    int16_t byte_x1 = x1 >> 1;
-    int16_t bpr = byte_x1 - byte_x0 + 1;
+    uint8_t *show = display_show_buffer_ptr;
+    int16_t bpr;
 
-    overlay.save_byte_x = byte_x0;
+    if (display_bpp == 8) {
+        /* 8bpp: save_byte_x = pixel x directly */
+        bpr = x1 - x0 + 1;
+        overlay.save_byte_x = x0;
+    } else {
+        /* 4bpp: save byte range in pair-encoded framebuffer */
+        int16_t byte_x0 = x0 >> 1;
+        int16_t byte_x1 = x1 >> 1;
+        bpr = byte_x1 - byte_x0 + 1;
+        overlay.save_byte_x = byte_x0;
+    }
+
     overlay.save_bpr    = bpr;
     overlay.save_y0     = y0;
     overlay.save_y1     = y1;
@@ -277,28 +289,31 @@ void cursor_overlay_stamp(int16_t x, int16_t y) {
     overlay.stamp_type  = current_cursor;
 
     /* Save show-buffer pixels under cursor */
-    uint8_t *show = display_show_buffer_ptr;
-    uint8_t *dst  = overlay.save;
+    uint8_t *dst = overlay.save;
     for (int16_t row = y0; row <= y1; row++) {
-        memcpy(dst, &show[row * FB_STRIDE + byte_x0], bpr);
+        memcpy(dst, &show[row * display_fb_stride + overlay.save_byte_x], bpr);
         dst += bpr;
     }
 
     /* Draw cursor onto show buffer */
     for (int row = 0; row < c->h; row++) {
         int py = oy + row;
-        if (py < 0 || py >= DISPLAY_HEIGHT) continue;
+        if (py < 0 || py >= (int)display_height) continue;
         for (int col = 0; col < c->w; col++) {
             uint8_t px_val = c->bitmap[row * c->w + col];
             if (px_val == 0) continue;
             int px = ox + col;
-            if (px < 0 || px >= DISPLAY_WIDTH) continue;
+            if (px < 0 || px >= (int)display_width) continue;
             uint8_t color = (px_val == 1) ? COLOR_BLACK : COLOR_WHITE;
-            uint8_t *p = &show[py * FB_STRIDE + (px >> 1)];
-            if (px & 1)
-                *p = (*p & 0xF0) | color;
-            else
-                *p = (*p & 0x0F) | (color << 4);
+            if (display_bpp == 8) {
+                show[py * display_fb_stride + px] = color;
+            } else {
+                uint8_t *p = &show[py * display_fb_stride + (px >> 1)];
+                if (px & 1)
+                    *p = (*p & 0xF0) | color;
+                else
+                    *p = (*p & 0x0F) | (color << 4);
+            }
         }
     }
 
@@ -313,7 +328,7 @@ void cursor_overlay_erase(void) {
     int16_t bpr = overlay.save_bpr;
 
     for (int16_t row = overlay.save_y0; row <= overlay.save_y1; row++) {
-        memcpy(&show[row * FB_STRIDE + overlay.save_byte_x], src, bpr);
+        memcpy(&show[row * display_fb_stride + overlay.save_byte_x], src, bpr);
         src += bpr;
     }
 

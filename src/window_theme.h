@@ -12,46 +12,109 @@
 #include "window.h"
 
 /*==========================================================================
- * Decoration metrics (pixels) — Win95 style
+ * Theme IDs
  *=========================================================================*/
 
-#define THEME_TITLE_HEIGHT   20    /* title bar height */
-#define THEME_BORDER_WIDTH    4    /* border thickness (Win95 double bevel) */
-#define THEME_MENU_HEIGHT    20    /* menu bar height */
-#define THEME_BUTTON_W       16    /* title-bar button width */
-#define THEME_BUTTON_H       14    /* title-bar button height */
-#define THEME_BUTTON_PAD      2    /* padding between buttons */
-
-/* Minimum window outer dimensions */
-#define THEME_MIN_W          80
-#define THEME_MIN_H          40
-
-/* Corner resize grab zone (pixels from corner edge) */
-#define THEME_RESIZE_GRAB     6
+#define THEME_ID_WIN95    0
+#define THEME_ID_SIMPLE   1
+#define THEME_COUNT       2
 
 /*==========================================================================
- * Color scheme
+ * Theme style flags (controls decoration drawing behavior)
  *=========================================================================*/
 
-#define THEME_DESKTOP_COLOR       COLOR_CYAN
+#define TSTYLE_BEVEL_3D     (1u << 0)  /* Win95-style 3D bevels */
+#define TSTYLE_FLAT_BORDER  (1u << 1)  /* Simple 1px border */
+#define TSTYLE_DOT_BUTTONS  (1u << 2)  /* macOS-style colored dot buttons */
 
-/* Active window */
-#define THEME_ACTIVE_TITLE_BG     COLOR_BLUE
-#define THEME_ACTIVE_TITLE_FG     COLOR_WHITE
-#define THEME_ACTIVE_BORDER       COLOR_LIGHT_GRAY
+/*==========================================================================
+ * Theme structure — runtime-configurable colors and metrics
+ *=========================================================================*/
 
-/* Inactive window */
-#define THEME_INACTIVE_TITLE_BG   COLOR_DARK_GRAY
-#define THEME_INACTIVE_TITLE_FG   COLOR_LIGHT_GRAY
-#define THEME_INACTIVE_BORDER     COLOR_DARK_GRAY
+typedef struct {
+    const char *name;
 
-/* 3D bevel for buttons and frames */
-#define THEME_BEVEL_LIGHT         COLOR_WHITE
-#define THEME_BEVEL_DARK          COLOR_DARK_GRAY
-#define THEME_BUTTON_FACE         COLOR_LIGHT_GRAY
+    /* Style flags */
+    uint16_t style;
 
-/* Client area default */
-#define THEME_CLIENT_BG           COLOR_WHITE
+    /* Decoration metrics (pixels) */
+    int16_t  title_height;
+    int16_t  border_width;
+    int16_t  menu_height;
+    int16_t  button_w;
+    int16_t  button_h;
+    int16_t  button_pad;
+    int16_t  min_w;
+    int16_t  min_h;
+    int16_t  resize_grab;
+
+    /* Color scheme */
+    uint8_t  desktop_color;
+
+    /* Active window */
+    uint8_t  active_title_bg;
+    uint8_t  active_title_fg;
+    uint8_t  active_border;
+
+    /* Inactive window */
+    uint8_t  inactive_title_bg;
+    uint8_t  inactive_title_fg;
+    uint8_t  inactive_border;
+
+    /* 3D bevel for buttons and frames */
+    uint8_t  bevel_light;
+    uint8_t  bevel_dark;
+    uint8_t  button_face;
+
+    /* Client area default */
+    uint8_t  client_bg;
+
+    /* Dot button colors (for TSTYLE_DOT_BUTTONS) */
+    uint8_t  dot_close;       /* red */
+    uint8_t  dot_minimize;    /* yellow */
+    uint8_t  dot_maximize;    /* green */
+} theme_t;
+
+/*==========================================================================
+ * Global theme pointer — defined in theme.c
+ *=========================================================================*/
+
+extern const theme_t *current_theme;
+
+/* Built-in theme table */
+extern const theme_t builtin_themes[THEME_COUNT];
+
+/* Set theme by ID (0-based index). Forces full repaint. */
+void theme_set(uint8_t theme_id);
+
+/* Get current theme ID */
+uint8_t theme_get_id(void);
+
+/*==========================================================================
+ * Backward-compatible macros — read from current_theme at runtime
+ *=========================================================================*/
+
+#define THEME_TITLE_HEIGHT   (current_theme->title_height)
+#define THEME_BORDER_WIDTH   (current_theme->border_width)
+#define THEME_MENU_HEIGHT    (current_theme->menu_height)
+#define THEME_BUTTON_W       (current_theme->button_w)
+#define THEME_BUTTON_H       (current_theme->button_h)
+#define THEME_BUTTON_PAD     (current_theme->button_pad)
+#define THEME_MIN_W          (current_theme->min_w)
+#define THEME_MIN_H          (current_theme->min_h)
+#define THEME_RESIZE_GRAB    (current_theme->resize_grab)
+
+#define THEME_DESKTOP_COLOR       (current_theme->desktop_color)
+#define THEME_ACTIVE_TITLE_BG     (current_theme->active_title_bg)
+#define THEME_ACTIVE_TITLE_FG     (current_theme->active_title_fg)
+#define THEME_ACTIVE_BORDER       (current_theme->active_border)
+#define THEME_INACTIVE_TITLE_BG   (current_theme->inactive_title_bg)
+#define THEME_INACTIVE_TITLE_FG   (current_theme->inactive_title_fg)
+#define THEME_INACTIVE_BORDER     (current_theme->inactive_border)
+#define THEME_BEVEL_LIGHT         (current_theme->bevel_light)
+#define THEME_BEVEL_DARK          (current_theme->bevel_dark)
+#define THEME_BUTTON_FACE         (current_theme->button_face)
+#define THEME_CLIENT_BG           (current_theme->client_bg)
 
 /*==========================================================================
  * Hit-test zones (returned by theme_hit_test)

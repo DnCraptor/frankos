@@ -134,11 +134,11 @@ static void calc_geometry(void) {
     at_h = AT_PAD_TOP + AT_CELL_H + AT_TITLE_H + AT_PAD_BOTTOM;
 
     /* Clamp width to screen */
-    if (at_w > DISPLAY_WIDTH - 16)
-        at_w = DISPLAY_WIDTH - 16;
+    if (at_w > display_width - 16)
+        at_w = display_width - 16;
 
-    at_x = (DISPLAY_WIDTH  - at_w) / 2;
-    at_y = (DISPLAY_HEIGHT - at_h) / 2;
+    at_x = (display_width  - at_w) / 2;
+    at_y = (display_height - at_h) / 2;
 }
 
 /* ── Public API ───────────────────────────────────────────────── */

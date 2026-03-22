@@ -350,34 +350,46 @@ static cursor_type_t cursor_for_edge(uint8_t zone) {
  *=========================================================================*/
 
 static void show_xor_hline(int16_t x, int16_t y, int16_t w) {
-    if (y < 0 || y >= DISPLAY_HEIGHT || w <= 0) return;
+    if (y < 0 || y >= (int16_t)display_height || w <= 0) return;
     int16_t x0 = x < 0 ? 0 : x;
     int16_t x1 = x + w - 1;
-    if (x1 >= DISPLAY_WIDTH) x1 = DISPLAY_WIDTH - 1;
+    if (x1 >= (int16_t)display_width) x1 = (int16_t)display_width - 1;
     if (x0 > x1) return;
 
-    uint8_t *row = &display_show_buffer_ptr[y * FB_STRIDE];
-    int16_t px = x0;
+    uint8_t *row = &display_show_buffer_ptr[y * display_fb_stride];
 
-    if (px & 1) { row[px >> 1] ^= 0x0F; px++; }
-    while (px + 1 <= x1) { row[px >> 1] ^= 0xFF; px += 2; }
-    if (px <= x1) { row[px >> 1] ^= 0xF0; }
+    if (display_bpp == 8) {
+        for (int16_t px = x0; px <= x1; px++)
+            row[px] ^= 0xFF;
+    } else {
+        int16_t px = x0;
+        if (px & 1) { row[px >> 1] ^= 0x0F; px++; }
+        while (px + 1 <= x1) { row[px >> 1] ^= 0xFF; px += 2; }
+        if (px <= x1) { row[px >> 1] ^= 0xF0; }
+    }
 }
 
 static void show_xor_vline(int16_t x, int16_t y, int16_t h) {
-    if (x < 0 || x >= DISPLAY_WIDTH || h <= 0) return;
+    if (x < 0 || x >= (int16_t)display_width || h <= 0) return;
     int16_t y0 = y < 0 ? 0 : y;
     int16_t y1 = y + h - 1;
-    if (y1 >= DISPLAY_HEIGHT) y1 = DISPLAY_HEIGHT - 1;
+    if (y1 >= (int16_t)display_height) y1 = (int16_t)display_height - 1;
     if (y0 > y1) return;
 
-    int16_t byte_off = x >> 1;
-    uint8_t mask = (x & 1) ? 0x0F : 0xF0;
-    uint8_t *p = &display_show_buffer_ptr[y0 * FB_STRIDE + byte_off];
-
-    for (int16_t r = y0; r <= y1; r++) {
-        *p ^= mask;
-        p += FB_STRIDE;
+    if (display_bpp == 8) {
+        uint8_t *p = &display_show_buffer_ptr[y0 * display_fb_stride + x];
+        for (int16_t r = y0; r <= y1; r++) {
+            *p ^= 0xFF;
+            p += display_fb_stride;
+        }
+    } else {
+        int16_t byte_off = x >> 1;
+        uint8_t mask = (x & 1) ? 0x0F : 0xF0;
+        uint8_t *p = &display_show_buffer_ptr[y0 * display_fb_stride + byte_off];
+        for (int16_t r = y0; r <= y1; r++) {
+            *p ^= mask;
+            p += display_fb_stride;
+        }
     }
 }
 

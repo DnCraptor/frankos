@@ -1474,7 +1474,7 @@ void textfield_paint(textfield_t *tf) {
     if (tf->focused && tf->cursor_visible) {
         int cx = tx + tf->cursor * FONT_UI_WIDTH;
         for (int r = 0; r < FONT_UI_HEIGHT; r++)
-            if ((unsigned)(ty + r) < (unsigned)FB_HEIGHT)
+            if ((unsigned)(ty + r) < (unsigned)display_height)
                 display_set_pixel(cx, ty + r, COLOR_BLACK);
     }
 }
@@ -1780,7 +1780,7 @@ void combobox_paint(combobox_t *cb) {
     if (tf->focused && tf->cursor_visible && !cb->drop_open) {
         int cx = tx + tf->cursor * FONT_UI_WIDTH;
         for (int r = 0; r < FONT_UI_HEIGHT; r++)
-            if ((unsigned)(ty + r) < (unsigned)FB_HEIGHT)
+            if ((unsigned)(ty + r) < (unsigned)display_height)
                 display_set_pixel(cx, ty + r, COLOR_BLACK);
     }
 

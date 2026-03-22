@@ -34,7 +34,7 @@ extern const uint8_t default_icon_16x16[256];
 
 /* Notification area (system tray) — right side of taskbar */
 #define TRAY_WIDTH        64
-#define TRAY_X            (DISPLAY_WIDTH - TRAY_WIDTH - 2)
+#define TRAY_X            ((int)display_width - TRAY_WIDTH - 2)
 #define TASK_AREA_W       (TRAY_X - TASK_AREA_X - 4)
 
 /* Speaker icon position inside tray */
@@ -112,7 +112,7 @@ void taskbar_init(void) {
 }
 
 int16_t taskbar_work_area_height(void) {
-    return DISPLAY_HEIGHT - TASKBAR_HEIGHT;
+    return display_height - TASKBAR_HEIGHT;
 }
 
 void taskbar_invalidate(void) {
@@ -143,7 +143,7 @@ void taskbar_draw(void) {
     if (fs_focus != HWND_NULL) {
         window_t *fw = wm_get_window(fs_focus);
         if (fw && fw->frame.x == 0 && fw->frame.y == 0 &&
-            fw->frame.w == DISPLAY_WIDTH && fw->frame.h == DISPLAY_HEIGHT &&
+            fw->frame.w == display_width && fw->frame.h == display_height &&
             !(fw->flags & WF_BORDER))
             return;
     }
@@ -153,11 +153,11 @@ void taskbar_draw(void) {
     int y = TASKBAR_Y;
 
     /* Main bar background */
-    gfx_fill_rect(0, y, DISPLAY_WIDTH, TASKBAR_HEIGHT, THEME_BUTTON_FACE);
+    gfx_fill_rect(0, y, display_width, TASKBAR_HEIGHT, THEME_BUTTON_FACE);
 
     /* Top raised edge */
-    gfx_hline(0, y, DISPLAY_WIDTH, COLOR_WHITE);
-    gfx_hline(0, y + 1, DISPLAY_WIDTH, THEME_BUTTON_FACE);
+    gfx_hline(0, y, display_width, COLOR_WHITE);
+    gfx_hline(0, y + 1, display_width, THEME_BUTTON_FACE);
 
     /* Start button */
     bool start_open = startmenu_is_open();
@@ -281,7 +281,7 @@ bool taskbar_mouse_click(int16_t x, int16_t y) {
         if (!win || !(win->flags & WF_ALIVE)) continue;
         if (!(win->flags & WF_BORDER)) continue;
 
-        if (btn_x + btn_w > DISPLAY_WIDTH) break;
+        if (btn_x + btn_w > display_width) break;
 
         if (x >= btn_x && x < btn_x + btn_w &&
             y >= BUTTON_Y && y < BUTTON_Y + BUTTON_HEIGHT) {
@@ -364,8 +364,8 @@ bool taskbar_mouse_rclick(int16_t x, int16_t y) {
             int menu_h = 4 + tb_item_count * TB_ITEM_HEIGHT;
             tb_popup_x = btn_x;
             tb_popup_y = TASKBAR_Y - menu_h;
-            if (tb_popup_x + TB_MENU_WIDTH > DISPLAY_WIDTH)
-                tb_popup_x = DISPLAY_WIDTH - TB_MENU_WIDTH;
+            if (tb_popup_x + TB_MENU_WIDTH > display_width)
+                tb_popup_x = display_width - TB_MENU_WIDTH;
 
             tb_popup_hover = 0;
             tb_popup_open_flag = true;

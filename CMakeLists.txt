@@ -56,6 +56,7 @@ add_executable(frankos
     src/window.c
     src/window_event.c
     src/window_draw.c
+    src/theme.c
     src/sdcard_init.c
     src/font_ui.c
     src/font_ui_bold.c

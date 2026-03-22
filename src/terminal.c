@@ -162,11 +162,11 @@ static void __not_in_flash_func(terminal_paint)(hwnd_t hwnd) {
     /* Draw character grid using fast glyph blitter */
     for (int row = 0; row < term_rows; row++) {
         int sy = oy + row * TERM_FONT_H;
-        if (sy + TERM_FONT_H <= 0 || sy >= FB_HEIGHT) continue;
+        if (sy + TERM_FONT_H <= 0 || sy >= display_height) continue;
 
         for (int col = 0; col < term_cols; col++) {
             int sx = ox + col * TERM_FONT_W;
-            if (sx + TERM_FONT_W <= 0 || sx >= DISPLAY_WIDTH) continue;
+            if (sx + TERM_FONT_W <= 0 || sx >= display_width) continue;
 
             int off = (row * term_cols + col) * 2;
             uint8_t ch   = paint_shadow[off];
@@ -178,18 +178,18 @@ static void __not_in_flash_func(terminal_paint)(hwnd_t hwnd) {
 
             /* Fast path: even x and fully on-screen */
             if (!(sx & 1) &&
-                sx >= 0 && (sx + TERM_FONT_W) <= DISPLAY_WIDTH &&
-                sy >= 0 && (sy + TERM_FONT_H) <= FB_HEIGHT) {
+                sx >= 0 && (sx + TERM_FONT_W) <= display_width &&
+                sy >= 0 && (sy + TERM_FONT_H) <= display_height) {
                 display_blit_glyph_8wide(sx, sy, glyph, TERM_FONT_H, fg, bg);
             } else {
                 /* Fallback: per-pixel for partially clipped chars */
                 for (int gr = 0; gr < TERM_FONT_H; gr++) {
                     int py = sy + gr;
-                    if ((unsigned)py >= (unsigned)FB_HEIGHT) continue;
+                    if ((unsigned)py >= (unsigned)display_height) continue;
                     uint8_t bits = glyph[gr];
                     for (int gc = 0; gc < TERM_FONT_W; gc++) {
                         int px = sx + gc;
-                        if ((unsigned)px >= (unsigned)DISPLAY_WIDTH) continue;
+                        if ((unsigned)px >= (unsigned)display_width) continue;
                         display_set_pixel_fast(px, py,
                                                (bits & (1 << gc)) ? fg : bg);
                     }

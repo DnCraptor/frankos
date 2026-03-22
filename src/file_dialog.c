@@ -1141,7 +1141,7 @@ hwnd_t file_dialog_open(hwnd_t parent, const char *title,
     int outer_h = FD_CLIENT_H + THEME_TITLE_HEIGHT + 2 * THEME_BORDER_WIDTH;
 
     int work_h = taskbar_work_area_height();
-    int x = (DISPLAY_WIDTH - outer_w) / 2;
+    int x = (display_width - outer_w) / 2;
     int y = (work_h - outer_h) / 2;
     if (x < 0) x = 0;
     if (y < 0) y = 0;
@@ -1213,7 +1213,7 @@ hwnd_t file_dialog_save(hwnd_t parent, const char *title,
     int outer_h = FD_CLIENT_H + THEME_TITLE_HEIGHT + 2 * THEME_BORDER_WIDTH;
 
     int work_h = taskbar_work_area_height();
-    int x = (DISPLAY_WIDTH - outer_w) / 2;
+    int x = (display_width - outer_w) / 2;
     int y = (work_h - outer_h) / 2;
     if (x < 0) x = 0;
     if (y < 0) y = 0;

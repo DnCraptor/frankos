@@ -7,6 +7,7 @@
  */
 
 #include "settings.h"
+#include "window_theme.h"
 #include "board_config.h"
 #include "sdcard_init.h"
 #include "ff.h"
@@ -45,6 +46,10 @@ void settings_load(void) {
         if (g_settings.desktop_color > 15) g_settings.desktop_color = 3;
         if (g_settings.dblclick_ms < 200 || g_settings.dblclick_ms > 800)
             g_settings.dblclick_ms = 400;
+        if (g_settings.theme_id >= THEME_COUNT)
+            g_settings.theme_id = THEME_ID_WIN95;
+        /* Apply saved theme */
+        theme_set(g_settings.theme_id);
     }
     f_close(&f);
 }

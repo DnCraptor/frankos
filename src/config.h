@@ -47,9 +47,9 @@
 #define DISPHSTX_USE_FORMAT_1_PAL       0
 #define DISPHSTX_USE_FORMAT_2_PAL       0
 #define DISPHSTX_USE_FORMAT_3_PAL       0
-#define DISPHSTX_USE_FORMAT_4_PAL       1   // 4-bit paletted: the only format we use
+#define DISPHSTX_USE_FORMAT_4_PAL       1   // 4-bit paletted: 640x480x16 desktop mode
 #define DISPHSTX_USE_FORMAT_6_PAL       0
-#define DISPHSTX_USE_FORMAT_8_PAL       0
+#define DISPHSTX_USE_FORMAT_8_PAL       1   // 8-bit paletted: 320x240x256 fullscreen mode
 #define DISPHSTX_USE_FORMAT_COL         0
 #define DISPHSTX_USE_FORMAT_MTEXT       0
 #define DISPHSTX_USE_FORMAT_ATEXT       0

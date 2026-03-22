@@ -86,8 +86,8 @@ static void wm_add_expose_rect(const rect_t *r) {
     int16_t y0 = r->y < 0 ? 0 : r->y;
     int16_t x1 = r->x + r->w;
     int16_t y1 = r->y + r->h;
-    if (x1 > DISPLAY_WIDTH)  x1 = DISPLAY_WIDTH;
-    if (y1 > DISPLAY_HEIGHT) y1 = DISPLAY_HEIGHT;
+    if (x1 > display_width)  x1 = display_width;
+    if (y1 > display_height) y1 = display_height;
     int16_t cw = x1 - x0;
     int16_t ch = y1 - y0;
     if (cw <= 0 || ch <= 0) return;
@@ -172,7 +172,7 @@ hwnd_t wm_create_window(int16_t x, int16_t y, int16_t w, int16_t h,
                 int16_t base_x = win->frame.x;
                 int16_t base_y = win->frame.y;
                 int16_t work_h = taskbar_work_area_height();
-                int16_t max_x = DISPLAY_WIDTH - win->frame.w;
+                int16_t max_x = display_width - win->frame.w;
                 int16_t max_y = work_h - win->frame.h;
                 if (max_x < 0) max_x = 0;
                 if (max_y < 0) max_y = 0;
@@ -381,7 +381,7 @@ void wm_maximize_window(hwnd_t hwnd) {
         win->restore_rect = win->frame;
     }
     win->state = WS_MAXIMIZED;
-    win->frame = (rect_t){ 0, 0, DISPLAY_WIDTH, taskbar_work_area_height() };
+    win->frame = (rect_t){ 0, 0, display_width, taskbar_work_area_height() };
     win->flags |= WF_DIRTY | WF_FRAME_DIRTY;
     wm_add_expose_rect(&old_frame);
 
@@ -434,7 +434,7 @@ void wm_move_window(hwnd_t hwnd, int16_t x, int16_t y) {
      * misalign the high/low nibble and bleed into adjacent pixels. */
     if (x < 0) x = 0;
     x &= ~1;
-    if (x > DISPLAY_WIDTH - 60)   x = DISPLAY_WIDTH - 60;
+    if (x > display_width - 60)   x = display_width - 60;
     if (y < 0) y = 0;
     int16_t max_y = taskbar_work_area_height() - THEME_TITLE_HEIGHT;
     if (y > max_y) y = max_y;
@@ -465,7 +465,7 @@ void wm_set_window_rect(hwnd_t hwnd, int16_t x, int16_t y,
      * Force even x: 4bpp nibble-packed FB, see wm_move_window(). */
     if (x < 0) x = 0;
     x &= ~1;
-    if (x > DISPLAY_WIDTH - 60)   x = DISPLAY_WIDTH - 60;
+    if (x > display_width - 60)   x = display_width - 60;
     if (y < 0) y = 0;
     if (windows[hwnd - 1].flags & WF_BORDER) {
         int16_t max_y = taskbar_work_area_height() - THEME_TITLE_HEIGHT;
@@ -632,7 +632,7 @@ void wm_toggle_fullscreen(hwnd_t hwnd) {
         fs->saved_rect  = win->frame;
         fs->saved_flags = win->flags;
         win->flags &= ~(WF_BORDER | WF_MENUBAR);
-        wm_set_window_rect(hwnd, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+        wm_set_window_rect(hwnd, 0, 0, display_width, display_height);
         fs->active = true;
         cursor_set_visible(false);
         cursor_overlay_erase();
@@ -701,7 +701,7 @@ hwnd_t wm_window_at_point(int16_t x, int16_t y) {
 }
 
 /*==========================================================================
- * Decoration drawing — Win95 style
+ * Decoration drawing — theme-aware
  *=========================================================================*/
 
 /* Win95 raised bevel: 2px border with 3D highlight/shadow.
@@ -798,9 +798,65 @@ static void draw_minimize_glyph(const rect_t *btn, bool pressed) {
     gfx_hline(bx, by + 1, btn->w - 6, COLOR_BLACK);
 }
 
+/* Draw a filled circle (Bresenham midpoint) — used for macOS-style dots */
+static void draw_filled_circle(int cx, int cy, int r, uint8_t color) {
+    int x = 0, y = r, d = 1 - r;
+    while (x <= y) {
+        gfx_hline(cx - y, cy + x, 2 * y + 1, color);
+        gfx_hline(cx - y, cy - x, 2 * y + 1, color);
+        gfx_hline(cx - x, cy + y, 2 * x + 1, color);
+        gfx_hline(cx - x, cy - y, 2 * x + 1, color);
+        if (d < 0) {
+            d += 2 * x + 3;
+        } else {
+            d += 2 * (x - y) + 5;
+            y--;
+        }
+        x++;
+    }
+}
+
+/* Draw a circle outline (1px) */
+static void draw_circle_outline(int cx, int cy, int r, uint8_t color) {
+    int x = 0, y = r, d = 1 - r;
+    while (x <= y) {
+        display_set_pixel(cx + x, cy + y, color);
+        display_set_pixel(cx - x, cy + y, color);
+        display_set_pixel(cx + x, cy - y, color);
+        display_set_pixel(cx - x, cy - y, color);
+        display_set_pixel(cx + y, cy + x, color);
+        display_set_pixel(cx - y, cy + x, color);
+        display_set_pixel(cx + y, cy - x, color);
+        display_set_pixel(cx - y, cy - x, color);
+        if (d < 0) {
+            d += 2 * x + 3;
+        } else {
+            d += 2 * (x - y) + 5;
+            y--;
+        }
+        x++;
+    }
+}
+
+/* Draw a macOS-style colored dot button */
+static void draw_dot_button(const rect_t *btn, uint8_t fill_color, bool pressed) {
+    int cx = btn->x + btn->w / 2;
+    int cy = btn->y + btn->h / 2;
+    int r = 5;
+    if (pressed) {
+        /* Darken: draw outline only */
+        draw_circle_outline(cx, cy, r, COLOR_DARK_GRAY);
+        draw_filled_circle(cx, cy, r - 1, fill_color);
+    } else {
+        draw_filled_circle(cx, cy, r, fill_color);
+        draw_circle_outline(cx, cy, r, COLOR_DARK_GRAY);
+    }
+}
+
 static void draw_window_decorations(hwnd_t hwnd, window_t *win) {
     rect_t f = win->frame;
     bool focused = (win->flags & WF_FOCUSED) != 0;
+    uint16_t style = current_theme->style;
 
     if (!(win->flags & WF_BORDER)) {
         /* No border — just fill with bg color */
@@ -811,25 +867,17 @@ static void draw_window_decorations(hwnd_t hwnd, window_t *win) {
     uint8_t title_bg = focused ? THEME_ACTIVE_TITLE_BG : THEME_INACTIVE_TITLE_BG;
     uint8_t title_fg = focused ? THEME_ACTIVE_TITLE_FG : THEME_INACTIVE_TITLE_FG;
 
-    /* Win95 outer frame (outside-in):
-     * 1. 1px outer: top/left = light_gray, bottom/right = black
-     * 2. 1px highlight: top/left = white, bottom/right = dark_gray
-     * 3. Interior fill = light_gray (button face)
-     * 4. Sunken edge around client area */
-
     /* Fill entire frame with button face first */
     gfx_fill_rect(f.x, f.y, f.w, f.h, THEME_BUTTON_FACE);
 
-    /* Outer raised bevel (2px total) */
-    draw_bevel_raised(f.x, f.y, f.w, f.h);
+    if (style & TSTYLE_BEVEL_3D) {
+        /* Win95 outer frame: raised bevel (2px total) */
+        draw_bevel_raised(f.x, f.y, f.w, f.h);
 
-    /* Hide inner left white highlight line — it's too close to the
-     * sunken client edge and looks wrong in 4-bit color. */
-    gfx_vline(f.x + 1, f.y + 1, f.h - 2, THEME_BUTTON_FACE);
+        /* Hide inner left white highlight line */
+        gfx_vline(f.x + 1, f.y + 1, f.h - 2, THEME_BUTTON_FACE);
 
-    /* Sunken edge around client area — in real Win95 this sits BELOW the
-     * menu bar; the menu bar is part of the non-client chrome above it. */
-    {
+        /* Sunken edge around client area */
         int sx = f.x + THEME_BORDER_WIDTH - 2;
         int sy = f.y + THEME_BORDER_WIDTH + THEME_TITLE_HEIGHT;
         int sw = f.w - 2 * (THEME_BORDER_WIDTH - 2);
@@ -839,6 +887,9 @@ static void draw_window_decorations(hwnd_t hwnd, window_t *win) {
             sh -= THEME_MENU_HEIGHT;
         }
         draw_bevel_sunken(sx, sy, sw, sh);
+    } else if (style & TSTYLE_FLAT_BORDER) {
+        /* Simple theme: 1px dark gray border around the frame only */
+        gfx_rect(f.x, f.y, f.w, f.h, COLOR_DARK_GRAY);
     }
 
     /* Title bar background */
@@ -857,7 +908,6 @@ static void draw_window_decorations(hwnd_t hwnd, window_t *win) {
     int text_x = tb_x + 20;
     int max_title_w = tb_w - 20;
     if (win->flags & WF_CLOSABLE) {
-        /* Close + maximize + minimize buttons */
         max_title_w -= 3 * (THEME_BUTTON_W + THEME_BUTTON_PAD);
     }
     if (max_title_w > 0) {
@@ -865,30 +915,48 @@ static void draw_window_decorations(hwnd_t hwnd, window_t *win) {
                                   tb_x, tb_y, max_title_w, THEME_TITLE_HEIGHT);
     }
 
-    /* Title bar buttons — all closable windows get close + maximize + minimize */
+    /* Title bar buttons */
     if (win->flags & WF_CLOSABLE) {
         uint8_t pressed_btn = wm_get_pressed_titlebar_btn(hwnd);
 
-        rect_t cb = theme_close_btn_rect(&f);
-        bool close_pressed = (pressed_btn == HT_CLOSE);
-        draw_button(cb.x, cb.y, cb.w, cb.h, close_pressed);
-        draw_close_glyph(&cb, close_pressed);
+        if (style & TSTYLE_DOT_BUTTONS) {
+            /* macOS-style colored dots: close=red, maximize=green, minimize=yellow */
+            rect_t cb = theme_close_btn_rect(&f);
+            draw_dot_button(&cb, current_theme->dot_close,
+                            pressed_btn == HT_CLOSE);
 
-        rect_t mb = theme_max_btn_rect(&f);
-        bool max_pressed = (pressed_btn == HT_MAXIMIZE);
-        draw_button(mb.x, mb.y, mb.w, mb.h, max_pressed);
-        if (win->state == WS_MAXIMIZED) {
-            draw_restore_glyph(&mb, max_pressed);
+            rect_t mb = theme_max_btn_rect(&f);
+            uint8_t max_color = (win->flags & WF_RESIZABLE) ?
+                                 current_theme->dot_maximize : COLOR_DARK_GRAY;
+            draw_dot_button(&mb, max_color,
+                            pressed_btn == HT_MAXIMIZE);
+
+            rect_t nb = theme_min_btn_rect(&f);
+            draw_dot_button(&nb, current_theme->dot_minimize,
+                            pressed_btn == HT_MINIMIZE);
         } else {
-            uint8_t glyph_color = (win->flags & WF_RESIZABLE) ?
-                                   COLOR_BLACK : COLOR_DARK_GRAY;
-            draw_maximize_glyph(&mb, max_pressed, glyph_color);
-        }
+            /* Win95-style beveled buttons with glyphs */
+            rect_t cb = theme_close_btn_rect(&f);
+            bool close_pressed = (pressed_btn == HT_CLOSE);
+            draw_button(cb.x, cb.y, cb.w, cb.h, close_pressed);
+            draw_close_glyph(&cb, close_pressed);
 
-        rect_t nb = theme_min_btn_rect(&f);
-        bool min_pressed = (pressed_btn == HT_MINIMIZE);
-        draw_button(nb.x, nb.y, nb.w, nb.h, min_pressed);
-        draw_minimize_glyph(&nb, min_pressed);
+            rect_t mb = theme_max_btn_rect(&f);
+            bool max_pressed = (pressed_btn == HT_MAXIMIZE);
+            draw_button(mb.x, mb.y, mb.w, mb.h, max_pressed);
+            if (win->state == WS_MAXIMIZED) {
+                draw_restore_glyph(&mb, max_pressed);
+            } else {
+                uint8_t glyph_color = (win->flags & WF_RESIZABLE) ?
+                                       COLOR_BLACK : COLOR_DARK_GRAY;
+                draw_maximize_glyph(&mb, max_pressed, glyph_color);
+            }
+
+            rect_t nb = theme_min_btn_rect(&f);
+            bool min_pressed = (pressed_btn == HT_MINIMIZE);
+            draw_button(nb.x, nb.y, nb.w, nb.h, min_pressed);
+            draw_minimize_glyph(&nb, min_pressed);
+        }
     }
 
     /* Menu bar (drawn by menu system if WF_MENUBAR is set) */
@@ -898,11 +966,12 @@ static void draw_window_decorations(hwnd_t hwnd, window_t *win) {
         int mb_w = f.w - 2 * THEME_BORDER_WIDTH;
         menu_draw_bar(hwnd, mb_x, mb_y, mb_w);
 
-        /* Raised bottom edge of menu bar — Win95 draws a highlight line
-         * here that separates the menu bar from the client area below. */
-        int sep_x = f.x + THEME_BORDER_WIDTH - 2;
-        int sep_w = f.w - 2 * (THEME_BORDER_WIDTH - 2);
-        gfx_hline(sep_x, mb_y + THEME_MENU_HEIGHT - 1, sep_w, COLOR_WHITE);
+        if (style & TSTYLE_BEVEL_3D) {
+            /* Raised bottom edge of menu bar — Win95 highlight line */
+            int sep_x = f.x + THEME_BORDER_WIDTH - 2;
+            int sep_w = f.w - 2 * (THEME_BORDER_WIDTH - 2);
+            gfx_hline(sep_x, mb_y + THEME_MENU_HEIGHT - 1, sep_w, COLOR_WHITE);
+        }
     }
 
     /* Client area background */
@@ -1020,7 +1089,7 @@ void wm_composite(void) {
 
             /* Mark taskbar dirty if expose overlaps it */
             rect_t tb = { 0, taskbar_work_area_height(),
-                          DISPLAY_WIDTH, TASKBAR_HEIGHT };
+                          display_width, TASKBAR_HEIGHT };
             if (rect_overlaps(er, &tb))
                 taskbar_force_dirty();
         }

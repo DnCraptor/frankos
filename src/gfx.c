@@ -25,11 +25,11 @@ void gfx_fill_rect(int x, int y, int w, int h, uint8_t color) {
     int y1 = y + h;
     if (x < 0) x = 0;
     if (y < 0) y = 0;
-    if (x1 > DISPLAY_WIDTH) x1 = DISPLAY_WIDTH;
-    if (y1 > FB_HEIGHT) y1 = FB_HEIGHT;
+    if (x1 > display_width) x1 = display_width;
+    if (y1 > display_height) y1 = display_height;
     if (x >= x1 || y >= y1) return;
     int cw = x1 - x;
-    color &= 0x0F;
+    if (display_bpp == 4) color &= 0x0F;
     for (int row = y; row < y1; row++)
         display_hline_fast(x, row, cw, color);
 }
@@ -39,8 +39,8 @@ void gfx_fill_rect_dithered(int x, int y, int w, int h, uint8_t color) {
     int y1 = y + h;
     if (x < 0) x = 0;
     if (y < 0) y = 0;
-    if (x1 > DISPLAY_WIDTH) x1 = DISPLAY_WIDTH;
-    if (y1 > FB_HEIGHT) y1 = FB_HEIGHT;
+    if (x1 > display_width) x1 = display_width;
+    if (y1 > display_height) y1 = display_height;
     if (x >= x1 || y >= y1) return;
     for (int row = y; row < y1; row++)
         for (int col = x; col < x1; col++)
@@ -58,8 +58,8 @@ void gfx_rect(int x, int y, int w, int h, uint8_t color) {
 void gfx_char(int x, int y, char c, uint8_t fg, uint8_t bg) {
     /* Fast path: even x and fully on-screen */
     if (!(x & 1) &&
-        x >= 0 && (x + FONT_WIDTH) <= DISPLAY_WIDTH &&
-        y >= 0 && (y + FONT_HEIGHT) <= FB_HEIGHT) {
+        x >= 0 && (x + FONT_WIDTH) <= display_width &&
+        y >= 0 && (y + FONT_HEIGHT) <= display_height) {
         display_blit_glyph_8wide(x, y, font_get_glyph(c),
                                   FONT_HEIGHT, fg & 0x0F, bg & 0x0F);
         return;
@@ -96,12 +96,12 @@ void gfx_fill_rect_clipped(int x, int y, int w, int h, uint8_t color,
     /* Also clip to screen */
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
-    if (x1 > DISPLAY_WIDTH) x1 = DISPLAY_WIDTH;
-    if (y1 > FB_HEIGHT) y1 = FB_HEIGHT;
+    if (x1 > display_width) x1 = display_width;
+    if (y1 > display_height) y1 = display_height;
     if (x0 >= x1 || y0 >= y1) return;
 
     int span = x1 - x0;
-    color &= 0x0F;
+    if (display_bpp == 4) color &= 0x0F;
     for (int row = y0; row < y1; row++)
         display_hline_fast(x0, row, span, color);
 }
@@ -112,8 +112,8 @@ void gfx_char_clipped(int x, int y, char c, uint8_t fg, uint8_t bg,
     if (!(x & 1) &&
         x >= cx && (x + FONT_WIDTH) <= (cx + cw) &&
         y >= cy && (y + FONT_HEIGHT) <= (cy + ch) &&
-        x >= 0 && (x + FONT_WIDTH) <= DISPLAY_WIDTH &&
-        y >= 0 && (y + FONT_HEIGHT) <= FB_HEIGHT) {
+        x >= 0 && (x + FONT_WIDTH) <= display_width &&
+        y >= 0 && (y + FONT_HEIGHT) <= display_height) {
         display_blit_glyph_8wide(x, y, font_get_glyph(c),
                                   FONT_HEIGHT, fg & 0x0F, bg & 0x0F);
         return;
@@ -256,10 +256,10 @@ void gfx_text_ui_bold_clipped(int x, int y, const char *str,
 void gfx_draw_icon_16(int sx, int sy, const uint8_t *icon_data) {
     for (int row = 0; row < 16; row++) {
         int py = sy + row;
-        if (py < 0 || py >= FB_HEIGHT) continue;
+        if (py < 0 || py >= display_height) continue;
         for (int col = 0; col < 16; col++) {
             int px = sx + col;
-            if (px < 0 || px >= DISPLAY_WIDTH) continue;
+            if (px < 0 || px >= display_width) continue;
             uint8_t c = icon_data[row * 16 + col];
             if (c != 0xFF)
                 display_set_pixel(px, py, c);
@@ -273,10 +273,10 @@ void gfx_draw_icon_16_clipped(int sx, int sy, const uint8_t *icon_data,
     int cy1 = cy + ch;
     for (int row = 0; row < 16; row++) {
         int py = sy + row;
-        if (py < cy || py >= cy1 || py < 0 || py >= FB_HEIGHT) continue;
+        if (py < cy || py >= cy1 || py < 0 || py >= display_height) continue;
         for (int col = 0; col < 16; col++) {
             int px = sx + col;
-            if (px < cx || px >= cx1 || px < 0 || px >= DISPLAY_WIDTH) continue;
+            if (px < cx || px >= cx1 || px < 0 || px >= display_width) continue;
             uint8_t c = icon_data[row * 16 + col];
             if (c != 0xFF)
                 display_set_pixel(px, py, c);
@@ -291,10 +291,10 @@ void gfx_draw_icon_16_clipped(int sx, int sy, const uint8_t *icon_data,
 void gfx_draw_icon_32(int sx, int sy, const uint8_t *icon_data) {
     for (int row = 0; row < 32; row++) {
         int py = sy + row;
-        if (py < 0 || py >= FB_HEIGHT) continue;
+        if (py < 0 || py >= display_height) continue;
         for (int col = 0; col < 32; col++) {
             int px = sx + col;
-            if (px < 0 || px >= DISPLAY_WIDTH) continue;
+            if (px < 0 || px >= display_width) continue;
             uint8_t c = icon_data[row * 32 + col];
             if (c != 0xFF)
                 display_set_pixel(px, py, c);
@@ -308,10 +308,10 @@ void gfx_draw_icon_32_clipped(int sx, int sy, const uint8_t *icon_data,
     int cy1 = cy + ch;
     for (int row = 0; row < 32; row++) {
         int py = sy + row;
-        if (py < cy || py >= cy1 || py < 0 || py >= FB_HEIGHT) continue;
+        if (py < cy || py >= cy1 || py < 0 || py >= display_height) continue;
         for (int col = 0; col < 32; col++) {
             int px = sx + col;
-            if (px < cx || px >= cx1 || px < 0 || px >= DISPLAY_WIDTH) continue;
+            if (px < cx || px >= cx1 || px < 0 || px >= display_width) continue;
             uint8_t c = icon_data[row * 32 + col];
             if (c != 0xFF)
                 display_set_pixel(px, py, c);

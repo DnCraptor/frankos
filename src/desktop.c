@@ -246,7 +246,7 @@ static void load_file_icon(desktop_shortcut_t *sc) {
 
 static int dt_cols(void) {
     /* Number of icon columns in the work area */
-    return (DISPLAY_WIDTH - DT_MARGIN_X * 2) / DT_CELL_W;
+    return (display_width - DT_MARGIN_X * 2) / DT_CELL_W;
 }
 
 static int dt_rows(void) {

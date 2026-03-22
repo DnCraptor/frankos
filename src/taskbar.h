@@ -14,7 +14,7 @@
 #include "display.h"
 
 #define TASKBAR_HEIGHT    28
-#define TASKBAR_Y         (DISPLAY_HEIGHT - TASKBAR_HEIGHT)
+#define TASKBAR_Y         ((int)display_height - TASKBAR_HEIGHT)
 #define TASKBAR_START_W   54
 
 /* Initialize taskbar state */

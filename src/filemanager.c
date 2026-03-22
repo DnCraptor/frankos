@@ -1228,8 +1228,8 @@ static void fm_show_progress(const char *label, int percent) {
 
     /* Redraw overlay directly to framebuffer */
     int bw = 220, bh = 50;
-    int bx = (DISPLAY_WIDTH - bw) / 2;
-    int by = (DISPLAY_HEIGHT - bh) / 2;
+    int bx = (display_width - bw) / 2;
+    int by = (display_height - bh) / 2;
 
     gfx_fill_rect(bx, by, bw, bh, THEME_BUTTON_FACE);
     /* Raised border */

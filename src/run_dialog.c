@@ -382,8 +382,8 @@ static void rd_paint(hwnd_t hwnd) {
             if (c == 0xFF) continue;
             int sx = co.x + RD_ICON_X + col;
             int sy = co.y + RD_ICON_Y + row;
-            if ((unsigned)sx < (unsigned)DISPLAY_WIDTH &&
-                (unsigned)sy < (unsigned)FB_HEIGHT)
+            if ((unsigned)sx < (unsigned)display_width &&
+                (unsigned)sy < (unsigned)display_height)
                 display_set_pixel(sx, sy, c);
         }
     }
@@ -434,7 +434,7 @@ static void rd_paint(hwnd_t hwnd) {
             int cx = ttx + rd_combo.field.cursor * FONT_UI_WIDTH;
             int cy = tty;
             for (int row = 0; row < FONT_UI_HEIGHT; row++)
-                if ((unsigned)(cy + row) < (unsigned)FB_HEIGHT)
+                if ((unsigned)(cy + row) < (unsigned)display_height)
                     display_set_pixel(cx, cy + row, COLOR_BLACK);
         }
     }
