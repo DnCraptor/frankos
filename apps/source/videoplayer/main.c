@@ -58,6 +58,7 @@ typedef struct {
     uint8_t *dt;                /* dither tables: 12 * 1024 bytes, SRAM */
     plm_frame_t *pending_frame;
     uint8_t  skip_count;        /* frame skip counter */
+    uint32_t time_debt;         /* ms lost to elapsed cap, repaid gradually */
     uint8_t  saved_volume;
     int      video_w;
     int      video_h;
@@ -326,8 +327,12 @@ static void render_2x(uint8_t *fb, plm_frame_t *frame) {
 static void on_video(plm_t *mpeg, plm_frame_t *frame, void *user) {
     (void)mpeg; (void)user;
 
-    G->skip_count ^= 1;
-    if (G->skip_count) return;
+    /* Adaptive frame skip: render if we have time budget, skip if behind.
+     * time_debt > 0 means we're behind schedule — skip render to catch up.
+     * Always render at least every 3rd frame for visual continuity. */
+    G->skip_count++;
+    if (G->time_debt > 20 && G->skip_count < 3) return;
+    G->skip_count = 0;
 
     uint8_t *fb = display_get_framebuffer();
     if (!fb) return;
@@ -350,7 +355,7 @@ static void on_audio(plm_t *mpeg, plm_samples_t *samples, void *user) {
     int16_t *out = G->audio_buf;
     int count = (int)samples->count;
     for (int i = 0; i < count * 2; i++) {
-        int v = (int)(samples->interleaved[i] * 32767.0f);
+        int v = (int)(samples->interleaved[i] * 19660.0f);  /* 60% volume */
         if (v >  32767) v =  32767;
         if (v < -32767) v = -32767;
         out[i] = (int16_t)v;
@@ -512,11 +517,20 @@ int main(int argc, char **argv) {
         uint32_t now = xTaskGetTickCount();
         uint32_t elapsed_ms = now - last_tick;
         last_tick = now;
-        /* Cap at 2 frame periods (~80ms) to prevent plm_decode from
-         * batch-decoding many frames after a stall (blocks ESC) */
-        if (elapsed_ms > 80) elapsed_ms = 80;
 
-        plm_decode(G->plm, (double)elapsed_ms * 0.001);
+        /* Cap per-call to keep ESC responsive, but accumulate
+         * lost time as debt and repay 20ms/frame to stay in sync */
+        uint32_t debt = G->time_debt;
+        uint32_t repay = (debt > 20) ? 20 : debt;
+        uint32_t feed = elapsed_ms + repay;
+        if (feed > 150) {
+            G->time_debt = debt - repay + (feed - 150);
+            feed = 150;
+        } else {
+            G->time_debt = debt - repay;
+        }
+
+        plm_decode(G->plm, (double)feed * 0.001);
 
         if (plm_has_ended(G->plm)) break;
     }
