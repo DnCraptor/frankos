@@ -56,6 +56,8 @@ typedef struct {
     int16_t *audio_buf;
     uint8_t *y_tab;
     uint8_t *dt;                /* dither tables: 12 * 1024 bytes, SRAM */
+    plm_frame_t *pending_frame;
+    uint8_t  skip_count;        /* frame skip counter */
     uint8_t  saved_volume;
     int      video_w;
     int      video_h;
@@ -163,12 +165,14 @@ static void init_tables(void) {
     }
 }
 
+static void on_audio(plm_t *mpeg, plm_samples_t *samples, void *user);
+
 #define LINE_BUF_W 336
 
-/* 1:1 renderer for video width > 160 (e.g. 320x240) */
-static void render_1x(uint8_t *fb, plm_frame_t *frame) {
+/* 1:1 renderer — renders chroma rows [row_start, row_end) */
+static void render_1x_rows(uint8_t *fb, plm_frame_t *frame,
+                            int row_start, int row_end) {
     int cols = (int)frame->width >> 1;
-    int rows = (int)frame->height >> 1;
     int yw = (int)frame->y.width;
     int cw = (int)frame->cb.width;
     int ox = G->offset_x;
@@ -176,7 +180,6 @@ static void render_1x(uint8_t *fb, plm_frame_t *frame) {
     const uint8_t *ytab = G->y_tab;
 
     if (cols > 160) cols = 160;
-    if (rows > 120) rows = 120;
 
     const uint8_t *r0 = G->dt + 0*DT_SZ + DT_BIAS;
     const uint8_t *g0 = G->dt + 1*DT_SZ + DT_BIAS;
@@ -194,7 +197,7 @@ static void render_1x(uint8_t *fb, plm_frame_t *frame) {
     uint8_t yl0[LINE_BUF_W], yl1[LINE_BUF_W];
     uint8_t cbl[LINE_BUF_W/2], crl[LINE_BUF_W/2];
 
-    for (int row = 0; row < rows; row++) {
+    for (int row = row_start; row < row_end; row++) {
         memcpy(yl0, frame->y.data  + row*2*yw,      cols*2);
         memcpy(yl1, frame->y.data  + row*2*yw + yw,  cols*2);
         memcpy(cbl, frame->cb.data + row*cw,          cols);
@@ -309,13 +312,20 @@ static void render_2x(uint8_t *fb, plm_frame_t *frame) {
 
 static void on_video(plm_t *mpeg, plm_frame_t *frame, void *user) {
     (void)mpeg; (void)user;
+
+    /* Skip every 3rd frame — frees ~13ms for audio decode */
+    if (++G->skip_count >= 3) { G->skip_count = 0; return; }
+
     uint8_t *fb = display_get_framebuffer();
     if (!fb) return;
 
     if ((int)frame->width <= 160 && (int)frame->height <= 120)
         render_2x(fb, frame);
-    else
-        render_1x(fb, frame);
+    else {
+        int rows = (int)frame->height >> 1;
+        if (rows > 120) rows = 120;
+        render_1x_rows(fb, frame, 0, rows);
+    }
 }
 
 /* ======================================================================
@@ -467,14 +477,14 @@ int main(int argc, char **argv) {
         G->saved_volume = ((get_vol_t)_sys_table_ptrs[535])();
     }
 
-    /* Callbacks — 100ms audio lead so plm_decode pre-buffers audio
-     * before calling on_video (which blocks during render) */
+    /* Callbacks */
     plm_set_video_decode_callback(G->plm, on_video, NULL);
     if (samplerate > 0) {
         plm_set_audio_decode_callback(G->plm, on_audio, NULL);
         plm_set_audio_lead_time(G->plm, 0.1);
     }
 
+    /* Main loop — plm_decode handles A/V sync, on_video skips every 3rd */
     uint32_t last_tick = xTaskGetTickCount();
     while (!G->closing) {
         process_input();
