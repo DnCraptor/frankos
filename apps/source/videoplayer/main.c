@@ -169,7 +169,10 @@ static void on_audio(plm_t *mpeg, plm_samples_t *samples, void *user);
 
 #define LINE_BUF_W 336
 
-/* 1:1 renderer with full 2×2 Bayer dithering */
+/* 1:1 renderer with 4×4 blue-noise-like dithering.
+ * Uses the same 4 threshold tables but varies assignment per chroma block
+ * based on (col%2, row%2), creating a non-repeating 4×4 pattern.
+ * Looks much smoother than regular 2×2 Bayer with no extra cost. */
 static void render_1x_rows(uint8_t *fb, plm_frame_t *frame,
                             int row_start, int row_end) {
     int cols = (int)frame->width >> 1;
@@ -181,18 +184,24 @@ static void render_1x_rows(uint8_t *fb, plm_frame_t *frame,
 
     if (cols > 160) cols = 160;
 
-    const uint8_t *r0 = G->dt + 0*DT_SZ + DT_BIAS;
-    const uint8_t *g0 = G->dt + 1*DT_SZ + DT_BIAS;
-    const uint8_t *b0 = G->dt + 2*DT_SZ + DT_BIAS;
-    const uint8_t *r1 = G->dt + 3*DT_SZ + DT_BIAS;
-    const uint8_t *g1 = G->dt + 4*DT_SZ + DT_BIAS;
-    const uint8_t *b1 = G->dt + 5*DT_SZ + DT_BIAS;
-    const uint8_t *r2 = G->dt + 6*DT_SZ + DT_BIAS;
-    const uint8_t *g2 = G->dt + 7*DT_SZ + DT_BIAS;
-    const uint8_t *b2 = G->dt + 8*DT_SZ + DT_BIAS;
-    const uint8_t *r3 = G->dt + 9*DT_SZ + DT_BIAS;
-    const uint8_t *g3 = G->dt +10*DT_SZ + DT_BIAS;
-    const uint8_t *b3 = G->dt +11*DT_SZ + DT_BIAS;
+    /* All 4 table sets */
+    const uint8_t *rp[4], *gp[4], *bp[4];
+    for (int p = 0; p < 4; p++) {
+        rp[p] = G->dt + (p*3+0)*DT_SZ + DT_BIAS;
+        gp[p] = G->dt + (p*3+1)*DT_SZ + DT_BIAS;
+        bp[p] = G->dt + (p*3+2)*DT_SZ + DT_BIAS;
+    }
+
+    /* 4×4 blue-noise-like pattern mapped to 4 thresholds:
+     *   0 3 1 2        Chroma blocks at different (col%2, row%2)
+     *   2 1 3 0   →    pick different table assignments per pixel,
+     *   3 0 2 1        creating a 4×4 non-repeating tile.
+     *   1 2 0 3
+     * Per-block pixel assignments [TL TR BL BR] indexed by cfg: */
+    int tl[4] = {0, 1, 3, 2};
+    int tr[4] = {3, 2, 0, 1};
+    int bl[4] = {2, 3, 1, 0};
+    int br[4] = {1, 0, 2, 3};
 
     uint8_t yl0[LINE_BUF_W], yl1[LINE_BUF_W];
     uint8_t cbl[LINE_BUF_W/2], crl[LINE_BUF_W/2];
@@ -203,6 +212,7 @@ static void render_1x_rows(uint8_t *fb, plm_frame_t *frame,
         memcpy(cbl, frame->cb.data + row*cw,          cols);
         memcpy(crl, frame->cr.data + row*cw,          cols);
 
+        int rp2 = (row & 1) * 2;
         int di = (oy + row*2) * 320 + ox;
         int yi = 0;
 
@@ -212,16 +222,19 @@ static void render_1x_rows(uint8_t *fb, plm_frame_t *frame,
             int rd = (cr * 104597) >> 16;
             int gd = (cb * 25674 + cr * 53278) >> 16;
             int bd = (cb * 132201) >> 16;
+
+            int cfg = (col & 1) + rp2;
+            int p0 = tl[cfg], p1 = tr[cfg], p2 = bl[cfg], p3 = br[cfg];
             int yy;
 
             yy = ytab[yl0[yi]];
-            fb[di]     = r0[yy+rd] + g0[yy-gd] + b0[yy+bd];
+            fb[di]     = rp[p0][yy+rd] + gp[p0][yy-gd] + bp[p0][yy+bd];
             yy = ytab[yl0[yi+1]];
-            fb[di+1]   = r1[yy+rd] + g1[yy-gd] + b1[yy+bd];
+            fb[di+1]   = rp[p1][yy+rd] + gp[p1][yy-gd] + bp[p1][yy+bd];
             yy = ytab[yl1[yi]];
-            fb[di+320] = r2[yy+rd] + g2[yy-gd] + b2[yy+bd];
+            fb[di+320] = rp[p2][yy+rd] + gp[p2][yy-gd] + bp[p2][yy+bd];
             yy = ytab[yl1[yi+1]];
-            fb[di+321] = r3[yy+rd] + g3[yy-gd] + b3[yy+bd];
+            fb[di+321] = rp[p3][yy+rd] + gp[p3][yy-gd] + bp[p3][yy+bd];
 
             yi += 2;
             di += 2;
@@ -499,6 +512,9 @@ int main(int argc, char **argv) {
         uint32_t now = xTaskGetTickCount();
         uint32_t elapsed_ms = now - last_tick;
         last_tick = now;
+        /* Cap at 2 frame periods (~80ms) to prevent plm_decode from
+         * batch-decoding many frames after a stall (blocks ESC) */
+        if (elapsed_ms > 80) elapsed_ms = 80;
 
         plm_decode(G->plm, (double)elapsed_ms * 0.001);
 
