@@ -76,8 +76,9 @@ static bool pshell_event(hwnd_t hwnd, const window_event_t *event) {
         if (wm_is_fullscreen(hwnd))
             wm_toggle_fullscreen(hwnd);
         g_closing = true;
-        /* Push Ctrl+C to wake the shell, then a quit signal */
-        vt100_input_push(3);  /* Ctrl+C */
+        vt100_request_close();
+        /* Push Enter to unblock dgreadln, then wake the shell task */
+        vt100_input_push('\r');
         if (g_main_task)
             xTaskNotifyGive(g_main_task);
         return true;
@@ -86,7 +87,8 @@ static bool pshell_event(hwnd_t hwnd, const window_event_t *event) {
     if (event->type == WM_COMMAND) {
         if (event->command.id == CMD_EXIT) {
             g_closing = true;
-            vt100_input_push(3);
+            vt100_request_close();
+            vt100_input_push('\r');
             if (g_main_task)
                 xTaskNotifyGive(g_main_task);
             return true;

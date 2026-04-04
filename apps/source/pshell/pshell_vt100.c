@@ -65,6 +65,9 @@ static volatile bool cursor_enabled;  /* DEC private mode ?25h/?25l */
  * framebuffer writes so pshell doesn't paint over other windows. */
 static volatile bool vt_active = true;
 
+/* Close-requested flag — set by WM_CLOSE handler, checked by shell loop */
+static volatile bool vt_close_requested = false;
+
 /* Window handle for invalidation */
 static hwnd_t   g_vt_hwnd;
 
@@ -626,6 +629,7 @@ void vt100_init(int cols, int rows) {
     vt_dirty = false;
     vt_state = ST_NORMAL;
     cached_fb = NULL;
+    vt_close_requested = false;
 
     /* Input ring buffer */
     in_head = 0;
@@ -645,6 +649,14 @@ void vt100_set_waiter(void *task_handle) {
 
 void vt100_set_hwnd(hwnd_t hwnd) {
     g_vt_hwnd = hwnd;
+}
+
+void vt100_request_close(void) {
+    vt_close_requested = true;
+}
+
+bool vt100_is_close_requested(void) {
+    return vt_close_requested;
 }
 
 /* ═════════════════════════════════════════════════════════════════════════

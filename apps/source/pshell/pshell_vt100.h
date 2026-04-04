@@ -75,4 +75,8 @@ void    vt100_set_hwnd(hwnd_t hwnd);
 /* ── Input waiter task (call from shell task to enable notify-based I/O) ─ */
 void    vt100_set_waiter(void *task_handle);
 
+/* ── Close request (window close → shell exit) ──────────────────────────── */
+void    vt100_request_close(void);
+bool    vt100_is_close_requested(void);
+
 #endif /* PSHELL_VT100_H */

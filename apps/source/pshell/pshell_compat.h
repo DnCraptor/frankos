@@ -73,6 +73,8 @@ void    vt100_ungetc(int c);
 void    vt100_get_size(int *cols, int *rows);
 void    vt100_input_flush(void);
 void    vt100_flush(void);
+void    vt100_request_close(void);
+bool    vt100_is_close_requested(void);
 
 /* ── LittleFS type compatibility ──────────────────────────────────────── */
 

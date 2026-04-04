@@ -1163,10 +1163,12 @@ int pshell_main(void) {
     printf("file system ready\n");
     printf("enter a command or hit ENTER for command list\n");
 
-    while (run) {
+    while (run && !vt100_is_close_requested()) {
         printf("\n" VT_BOLD "%s: " VT_NORMAL, full_path(""));
         fflush(stdout);
         parse_cmd();
+        if (vt100_is_close_requested())
+            break;
         result[0] = 0;
         bool found = false;
         if (argc) {
@@ -1190,7 +1192,9 @@ int pshell_main(void) {
             help();
     }
 
-    printf("\ndone\n");
+    if (mounted)
+        savehist();
+
     return 0;
 }
 #else
