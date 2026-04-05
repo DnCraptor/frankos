@@ -58,6 +58,7 @@ typedef struct {
     uint8_t *dt;                /* dither tables: 12 * 1024 bytes, SRAM */
     plm_frame_t *pending_frame;
     uint8_t  skip_count;        /* frame skip counter */
+    uint8_t  dither_phase;      /* toggles each frame for temporal dithering */
     uint32_t time_debt;         /* ms lost to elapsed cap, repaid gradually */
     uint8_t  saved_volume;
     int      video_w;
@@ -185,24 +186,18 @@ static void render_1x_rows(uint8_t *fb, plm_frame_t *frame,
 
     if (cols > 160) cols = 160;
 
-    /* All 4 table sets */
-    const uint8_t *rp[4], *gp[4], *bp[4];
-    for (int p = 0; p < 4; p++) {
-        rp[p] = G->dt + (p*3+0)*DT_SZ + DT_BIAS;
-        gp[p] = G->dt + (p*3+1)*DT_SZ + DT_BIAS;
-        bp[p] = G->dt + (p*3+2)*DT_SZ + DT_BIAS;
-    }
-
-    /* 4×4 blue-noise-like pattern mapped to 4 thresholds:
-     *   0 3 1 2        Chroma blocks at different (col%2, row%2)
-     *   2 1 3 0   →    pick different table assignments per pixel,
-     *   3 0 2 1        creating a 4×4 non-repeating tile.
-     *   1 2 0 3
-     * Per-block pixel assignments [TL TR BL BR] indexed by cfg: */
-    int tl[4] = {0, 1, 3, 2};
-    int tr[4] = {3, 2, 0, 1};
-    int bl[4] = {2, 3, 1, 0};
-    int br[4] = {1, 0, 2, 3};
+    const uint8_t *r0 = G->dt + 0*DT_SZ + DT_BIAS;
+    const uint8_t *g0 = G->dt + 1*DT_SZ + DT_BIAS;
+    const uint8_t *b0 = G->dt + 2*DT_SZ + DT_BIAS;
+    const uint8_t *r1 = G->dt + 3*DT_SZ + DT_BIAS;
+    const uint8_t *g1 = G->dt + 4*DT_SZ + DT_BIAS;
+    const uint8_t *b1 = G->dt + 5*DT_SZ + DT_BIAS;
+    const uint8_t *r2 = G->dt + 6*DT_SZ + DT_BIAS;
+    const uint8_t *g2 = G->dt + 7*DT_SZ + DT_BIAS;
+    const uint8_t *b2 = G->dt + 8*DT_SZ + DT_BIAS;
+    const uint8_t *r3 = G->dt + 9*DT_SZ + DT_BIAS;
+    const uint8_t *g3 = G->dt +10*DT_SZ + DT_BIAS;
+    const uint8_t *b3 = G->dt +11*DT_SZ + DT_BIAS;
 
     uint8_t yl0[LINE_BUF_W], yl1[LINE_BUF_W];
     uint8_t cbl[LINE_BUF_W/2], crl[LINE_BUF_W/2];
@@ -213,7 +208,6 @@ static void render_1x_rows(uint8_t *fb, plm_frame_t *frame,
         memcpy(cbl, frame->cb.data + row*cw,          cols);
         memcpy(crl, frame->cr.data + row*cw,          cols);
 
-        int rp2 = (row & 1) * 2;
         int di = (oy + row*2) * 320 + ox;
         int yi = 0;
 
@@ -223,19 +217,16 @@ static void render_1x_rows(uint8_t *fb, plm_frame_t *frame,
             int rd = (cr * 104597) >> 16;
             int gd = (cb * 25674 + cr * 53278) >> 16;
             int bd = (cb * 132201) >> 16;
-
-            int cfg = (col & 1) + rp2;
-            int p0 = tl[cfg], p1 = tr[cfg], p2 = bl[cfg], p3 = br[cfg];
             int yy;
 
             yy = ytab[yl0[yi]];
-            fb[di]     = rp[p0][yy+rd] + gp[p0][yy-gd] + bp[p0][yy+bd];
+            fb[di]     = r0[yy+rd] + g0[yy-gd] + b0[yy+bd];
             yy = ytab[yl0[yi+1]];
-            fb[di+1]   = rp[p1][yy+rd] + gp[p1][yy-gd] + bp[p1][yy+bd];
+            fb[di+1]   = r1[yy+rd] + g1[yy-gd] + b1[yy+bd];
             yy = ytab[yl1[yi]];
-            fb[di+320] = rp[p2][yy+rd] + gp[p2][yy-gd] + bp[p2][yy+bd];
+            fb[di+320] = r2[yy+rd] + g2[yy-gd] + b2[yy+bd];
             yy = ytab[yl1[yi+1]];
-            fb[di+321] = rp[p3][yy+rd] + gp[p3][yy-gd] + bp[p3][yy+bd];
+            fb[di+321] = r3[yy+rd] + g3[yy-gd] + b3[yy+bd];
 
             yi += 2;
             di += 2;
@@ -327,9 +318,8 @@ static void render_2x(uint8_t *fb, plm_frame_t *frame) {
 static void on_video(plm_t *mpeg, plm_frame_t *frame, void *user) {
     (void)mpeg; (void)user;
 
-    /* Adaptive frame skip: render if we have time budget, skip if behind.
-     * time_debt > 0 means we're behind schedule — skip render to catch up.
-     * Always render at least every 3rd frame for visual continuity. */
+    /* Adaptive frame skip: skip render when behind, always render
+     * at least every 3rd frame for visual continuity. */
     G->skip_count++;
     if (G->time_debt > 20 && G->skip_count < 3) return;
     G->skip_count = 0;
@@ -499,7 +489,7 @@ int main(int argc, char **argv) {
     plm_set_video_decode_callback(G->plm, on_video, NULL);
     if (samplerate > 0) {
         plm_set_audio_decode_callback(G->plm, on_audio, NULL);
-        plm_set_audio_lead_time(G->plm, 0.2);
+        plm_set_audio_lead_time(G->plm, 0.2f);
     }
 
     /* Main loop — plm_decode handles A/V sync, on_video skips every 3rd */
@@ -530,7 +520,7 @@ int main(int argc, char **argv) {
             G->time_debt = debt - repay;
         }
 
-        plm_decode(G->plm, (double)feed * 0.001);
+        plm_decode(G->plm, (float)feed * 0.001f);
 
         if (plm_has_ended(G->plm)) break;
     }
