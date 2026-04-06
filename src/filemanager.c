@@ -908,6 +908,16 @@ static void fm_paint(hwnd_t hwnd) {
     uint8_t dirty = fm->dirty ? fm->dirty : FM_DIRTY_ALL;
     fm->dirty = 0;
 
+    /* When the WM repaints window decorations (WF_FRAME_DIRTY), the
+     * entire client area is cleared.  Force a full content repaint so
+     * the toolbar and other regions are restored.  WF_FRAME_DIRTY is
+     * still set at this point — the WM clears it after paint returns. */
+    {
+        window_t *win = wm_get_window(hwnd);
+        if (win && (win->flags & WF_FRAME_DIRTY))
+            dirty = FM_DIRTY_ALL;
+    }
+
     /* Determine whether scrollbar is needed */
     int16_t fah = fm_file_area_height(ch);
     bool need_scrollbar = (fm->content_height > fah && fah > 0);
@@ -931,12 +941,8 @@ static void fm_paint(hwnd_t hwnd) {
         break;
     }
 
-    /* Toolbar — only repaint when its own state changed (button
-     * press/hover, tooltip, navigate).  File items are clipped to
-     * the file area and cannot bleed into the toolbar, so there is
-     * nothing to cover.  Skipping the toolbar entirely during plain
-     * file-selection repaints eliminates flicker on the single-buffer
-     * display. */
+    /* Toolbar — only repaint when flagged (button press/hover, tooltip,
+     * navigate, or post-popup full repaint above). */
     if (dirty & FM_DIRTY_TOOLBAR)
         fm_paint_toolbar(fm, cw);
 
