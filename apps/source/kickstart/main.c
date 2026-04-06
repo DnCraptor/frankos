@@ -921,8 +921,134 @@ static const menu_bar_t menu_bar = {
  * Entry point
  * ======================================================================== */
 
+/* ========================================================================
+ * Direct UF2 launch (invoked from Navigator with argv[1] = path)
+ * ======================================================================== */
+
+static char direct_uf2_path[MAX_PATH_LEN];
+
+/* Check if the given full path matches the last-flashed firmware */
+static bool direct_is_already_flashed(const char *path) {
+    FIL lf;
+    if (f_open(&lf, BASE_DIR "/.last", FA_READ) != FR_OK) return false;
+    char last[MAX_NAME_LEN];
+    UINT br;
+    last[0] = '\0';
+    f_read(&lf, last, sizeof(last) - 1, &br);
+    f_close(&lf);
+    last[br] = '\0';
+    while (br > 0 && (last[br-1] == '\n' || last[br-1] == '\r'
+                      || last[br-1] == ' '))
+        last[--br] = '\0';
+    if (!last[0]) return false;
+
+    /* Compare basename of path with last-flashed filename */
+    const char *base = local_strrchr(path, '/');
+    base = base ? base + 1 : path;
+    return strcmp(base, last) == 0;
+}
+
+static void direct_do_flash(void) {
+    const char *path = direct_uf2_path;
+
+    /* Already flashed — just reboot */
+    if (direct_is_already_flashed(path)) {
+        system_reboot_to_firmware();
+        return; /* never reached */
+    }
+
+    /* Save last-flashed (basename only) */
+    const char *base = local_strrchr(path, '/');
+    base = base ? base + 1 : path;
+    {
+        FIL lf;
+        if (f_open(&lf, BASE_DIR "/.last",
+                   FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {
+            UINT bw;
+            f_write(&lf, base, strlen(base), &bw);
+            f_close(&lf);
+        }
+    }
+
+    load_firmware((char *)path);
+    /* If we get here, flash failed */
+    wm_invalidate(ks.hwnd);
+}
+
+static bool direct_event_handler(hwnd_t hwnd, const window_event_t *event) {
+    if (event->type == WM_CLOSE) {
+        app_closing = true;
+        xTaskNotifyGive(app_task);
+        return true;
+    }
+    if (event->type == WM_COMMAND) {
+        uint16_t id = event->command.id;
+        if (id == DLG_RESULT_OK) {
+            direct_do_flash();
+            return true;
+        }
+        if (id == DLG_RESULT_CANCEL) {
+            app_closing = true;
+            xTaskNotifyGive(app_task);
+            return true;
+        }
+    }
+    return false;
+}
+
+static void direct_paint(hwnd_t hwnd) {
+    (void)hwnd;
+}
+
+static int run_direct(const char *path) {
+    app_task = xTaskGetCurrentTaskHandle();
+    app_closing = false;
+
+    strncpy(direct_uf2_path, path, MAX_PATH_LEN - 1);
+    direct_uf2_path[MAX_PATH_LEN - 1] = '\0';
+
+    const char *name = local_strrchr(path, '/');
+    name = name ? name + 1 : path;
+
+    /* Create a hidden window just to receive dialog WM_COMMAND results */
+    ks.hwnd = wm_create_window(-1, -1, 1, 1, "",
+                                0, direct_event_handler, direct_paint);
+    if (ks.hwnd == HWND_NULL) return 1;
+
+    static char dlg_text[256];
+    if (direct_is_already_flashed(path)) {
+        snprintf(dlg_text, sizeof(dlg_text),
+                 "Launch \"%s\"?\n\n"
+                 "Already flashed, will reboot.", name);
+        dialog_show(ks.hwnd, "Launch Firmware", dlg_text,
+                    DLG_ICON_INFO, DLG_BTN_OK | DLG_BTN_CANCEL);
+    } else {
+        snprintf(dlg_text, sizeof(dlg_text),
+                 "Flash \"%s\"?\n\n"
+                 "Screen will turn off during\n"
+                 "flashing. Please wait.", name);
+        dialog_show(ks.hwnd, "Flash Firmware", dlg_text,
+                    DLG_ICON_WARNING, DLG_BTN_OK | DLG_BTN_CANCEL);
+    }
+
+    while (!app_closing) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    }
+
+    wm_destroy_window(ks.hwnd);
+    return 0;
+}
+
+/* ========================================================================
+ * Entry point
+ * ======================================================================== */
+
 int main(int argc, char **argv) {
-    (void)argc; (void)argv;
+    /* Direct UF2 launch from Navigator */
+    if (argc >= 2 && argv[1] && argv[1][0]) {
+        return run_direct(argv[1]);
+    }
+
     app_task = xTaskGetCurrentTaskHandle();
 
     memset(&ks, 0, sizeof(ks));

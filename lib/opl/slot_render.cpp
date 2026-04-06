@@ -8,10 +8,10 @@
 
 #if PICO_ON_DEVICE
 #include "hardware/interp.h"
-#define SLOT_RENDER_DATA __scratch_y("slot_render_cpp")
-#else
-#define SLOT_RENDER_DATA
 #endif
+// Keep lookup tables in regular RAM to avoid competing with the stack
+// in the 4KB SCRATCH_Y region on RP2350.
+#define SLOT_RENDER_DATA
 
 static_assert(PM_DPHASE > 0, "");
 
@@ -125,7 +125,7 @@ static uint32_t ml_table[16] = {1, 1 * 2, 2 * 2, 3 * 2, 4 * 2, 5 * 2, 6 * 2, 7 *
 #else
 #define LOGSIN_TABLE_SIZE PG_WIDTH / 2
 #endif
-static uint16_t SLOT_RENDER_DATA logsin_table[LOGSIN_TABLE_SIZE] = {
+static const uint16_t logsin_table[LOGSIN_TABLE_SIZE] = {
         2137,  1731,  1543,  1419,  1326,  1252,  1190,  1137,  1091,  1050,  1013,  979, 949, 920, 894, 869,
         846,  825,  804,  785,  767,  749,  732,  717,  701,  687,  672,  659,  646,  633,  621,  609,
         598,  587,  576,  566,  556,  546,  536,  527,  518,  509,  501,  492,  484,  476,  468,  461,

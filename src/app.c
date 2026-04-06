@@ -28,6 +28,8 @@
 #include "swap.h"
 #include <hardware/watchdog.h>
 
+extern void snd_deinit(void);
+
 #define APP_TASK_PRIORITY 1
 
 extern const char TEMP[];
@@ -236,6 +238,8 @@ err:
 }
 
 bool __in_hfa() load_firmware(char* pathname) {
+    /* Shut down I2S audio to prevent clicks/noise during flash */
+    snd_deinit();
     if (flash_list) delete_list(flash_list);
     FILINFO* pfileinfo = pvPortMalloc(sizeof(FILINFO));
     f_stat(pathname, pfileinfo);

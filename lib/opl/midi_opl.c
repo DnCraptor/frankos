@@ -540,7 +540,18 @@ static void ProcessEvent(midi_opl_t *ctx, midi_event_t *event) {
 /* Song restart                                                       */
 /* ================================================================== */
 
+static void InitVoices(midi_opl_t *ctx);
+
 static void RestartSong(midi_opl_t *ctx) {
+    /* Silence the OPL chip completely before restarting.
+     * ReleaseVoice only triggers release envelopes; OPL_reset
+     * zeroes every register so no voice carries over into the new loop. */
+    for (int i = ctx->voice_alloced_num - 1; i >= 0; i--)
+        ReleaseVoice(ctx, i);
+    OPL_reset(ctx->opl);
+    opl_write(ctx, OPL_REG_WAVEFORM_ENABLE, 0x20);
+    InitVoices(ctx);
+
     ctx->running_tracks = ctx->num_tracks;
     for (unsigned int i = 0; i < ctx->num_tracks; i++) {
         MIDI_RestartIterator(ctx->tracks[i].iter);
@@ -729,19 +740,15 @@ int midi_opl_render(midi_opl_t *ctx, int16_t *buf, int max_frames) {
 
         OPL_calc_buffer_stereo(ctx->opl, ctx->opl_buf, to_render);
 
-        /* Convert 32-bit packed stereo → 16-bit interleaved + amplify */
+        /* Extract mono sample from packed stereo (both halves identical) + amplify */
         int16_t *out = buf + total_rendered * 2;
         for (unsigned int i = 0; i < to_render; i++) {
-            int32_t packed = ctx->opl_buf[i];
-            int16_t left = (int16_t)(packed >> 16);
-            int16_t right = (int16_t)(packed & 0xFFFF);
+            int16_t sample = (int16_t)(ctx->opl_buf[i] & 0xFFFF);
             /* Amplify by 8x for audible output */
-            int32_t l = (int32_t)left << 3;
-            int32_t r = (int32_t)right << 3;
-            if (l > 32767) l = 32767; else if (l < -32768) l = -32768;
-            if (r > 32767) r = 32767; else if (r < -32768) r = -32768;
-            out[i * 2] = (int16_t)l;
-            out[i * 2 + 1] = (int16_t)r;
+            int32_t s = (int32_t)sample << 3;
+            if (s > 32767) s = 32767; else if (s < -32768) s = -32768;
+            out[i * 2] = (int16_t)s;
+            out[i * 2 + 1] = (int16_t)s;
         }
 
         /* Advance time */

@@ -1,14 +1,13 @@
 add_library(opl STATIC
     emu8950.c
     slot_render.cpp
-    slot_render_pico.S
     midifile.c
     midi_opl.c
 )
 target_compile_definitions(opl PRIVATE
     USE_EMU8950_OPL=1
     EMU8950_LINEAR=1
-    EMU8950_ASM=1
+    EMU8950_ASM=0
     EMU8950_SLOT_RENDER=1
     EMU8950_NO_RATECONV=1
     EMU8950_NO_FLOAT=1
