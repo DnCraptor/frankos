@@ -734,11 +734,13 @@ void wm_handle_mouse_input(uint8_t type, int16_t x, int16_t y, uint8_t buttons) 
         }
         /* Right-click on taskbar: show context menu */
         if (taskbar_mouse_rclick(x, y)) return;
-        /* Forward to window under cursor */
+        /* Focus + raise the window before forwarding */
         hwnd_t target = wm_window_at_point(x, y);
-        if (target != HWND_NULL)
+        if (target != HWND_NULL) {
+            swap_switch_to(target);
+            wm_set_focus(target);
             forward_mouse_event(type, x, y, buttons, target);
-        else
+        } else
             desktop_mouse(type, x, y);
         return;
     }
