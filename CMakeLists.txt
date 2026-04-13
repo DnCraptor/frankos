@@ -100,6 +100,11 @@ add_executable(frankos
     src/settings.c
     src/control_panel.c
     src/cp_icons.c
+    src/serial.c
+    src/netcard.c
+    src/net_icons.c
+    src/wifi_config.c
+    src/network_settings.c
 
     # MOS2 core (copied from murmulator-os2)
     src/app.c
@@ -137,11 +142,15 @@ add_subdirectory(lib/opl)
 
 # I2S audio PIO program (generates audio_i2s.pio.h)
 add_subdirectory(drivers/audio)
+
+# PIO UART for ESP-01 netcard (generates uart_tx.pio.h, uart_rx.pio.h)
+add_subdirectory(drivers/uart_pio)
 target_include_directories(frankos PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
     ${CMAKE_CURRENT_LIST_DIR}/drivers/ps2
     ${CMAKE_CURRENT_LIST_DIR}/drivers/fatfs
     ${CMAKE_CURRENT_LIST_DIR}/drivers/psram
+    ${CMAKE_CURRENT_LIST_DIR}/drivers/uart_pio
     ${CMAKE_CURRENT_LIST_DIR}/src/posix.1/include
     ${CMAKE_CURRENT_LIST_DIR}/src/musl/include
     ${CMAKE_CURRENT_LIST_DIR}/src/musl/internal
@@ -190,6 +199,7 @@ target_compile_definitions(frankos PRIVATE
     M_API_VERSION=28
     MIN_API_VERSION=14
     RESERVED_RAM=512
+    PICO_HEAP_SIZE=0x400
     OS_FLASH_SIZE=256
     OVERCLOCKING=378
     I2S_SOUND=1

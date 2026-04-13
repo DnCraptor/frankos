@@ -1032,7 +1032,8 @@ void wm_composite(void) {
      * need a full clear to remove them. */
     bool has_popup = startmenu_is_open() || sysmenu_is_open() ||
                      menu_is_open() || menu_popup_is_open() ||
-                     taskbar_popup_is_open() || vol_popup_is_open();
+                     taskbar_popup_is_open() || vol_popup_is_open() ||
+                     net_popup_is_open();
     {
         static bool prev_had_popup = false;
         if (prev_had_popup && !has_popup)
@@ -1279,6 +1280,7 @@ void wm_composite(void) {
     menu_popup_draw();
     sysmenu_draw();
     taskbar_popup_draw();
+    net_popup_draw();
     vol_popup_draw();
     alttab_draw();
 

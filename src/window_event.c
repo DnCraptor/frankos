@@ -118,7 +118,6 @@ bool wm_post_event(hwnd_t hwnd, const window_event_t *event) {
     uint32_t save = spin_lock_blocking(eq_spinlock);
     if (eq_count >= WM_EVENT_QUEUE_SIZE) {
         spin_unlock(eq_spinlock, save);
-        printf("[wm] event queue full, dropping type=%d hwnd=%d\n", event->type, hwnd);
         return false;
     }
     event_queue[eq_head] = *event;
@@ -485,6 +484,11 @@ void wm_handle_mouse_input(uint8_t type, int16_t x, int16_t y, uint8_t buttons) 
         if (taskbar_popup_mouse(type, x, y)) return;
     }
 
+    /* Network tray popup */
+    if (net_popup_is_open()) {
+        if (net_popup_mouse(type, x, y)) return;
+    }
+
     /* Volume popup */
     if (vol_popup_is_open()) {
         if (vol_popup_mouse(type, x, y)) return;
@@ -527,6 +531,7 @@ void wm_handle_mouse_input(uint8_t type, int16_t x, int16_t y, uint8_t buttons) 
             titlebar_btn_zone = HT_NOWHERE;
         }
         if (taskbar_popup_is_open()) taskbar_popup_close();
+        if (net_popup_is_open()) net_popup_close();
         if (vol_popup_is_open()) vol_popup_close();
         if (startmenu_is_open()) startmenu_close();
         if (sysmenu_is_open()) sysmenu_close();
@@ -729,6 +734,10 @@ void wm_handle_mouse_input(uint8_t type, int16_t x, int16_t y, uint8_t buttons) 
 
     /* ---- Right button events ---- */
     if (type == WM_RBUTTONDOWN) {
+        /* Close network popup if open and click is outside */
+        if (net_popup_is_open()) {
+            if (net_popup_mouse(type, x, y)) return;
+        }
         /* Close taskbar popup if open and click is outside */
         if (taskbar_popup_is_open()) {
             if (taskbar_popup_mouse(type, x, y)) return;

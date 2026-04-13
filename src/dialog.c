@@ -424,6 +424,7 @@ uint16_t dialog_poll_result(void) {
  *=========================================================================*/
 
 static bool        input_mode;
+static bool        input_mask_mode; /* true = show asterisks instead of text */
 static char        input_buf[128];
 static uint8_t     input_len, input_max, input_cursor;
 static const char *input_prompt;
@@ -454,6 +455,7 @@ const char *dialog_input_get_text(void) {
 
 static void input_dialog_close(uint16_t result) {
     input_mode = false;
+    input_mask_mode = false;
     if (inp_blink_timer) {
         xTimerStop(inp_blink_timer, 0);
         xTimerDelete(inp_blink_timer, 0);
@@ -505,10 +507,18 @@ static void input_dialog_paint(hwnd_t hwnd) {
     /* White interior */
     wd_fill_rect(fx + 2, fy + 2, fw - 4, fh - 4, COLOR_WHITE);
 
-    /* Text in field */
+    /* Text in field (masked with asterisks for passwords) */
     int tx = dlg_screen_ox + fx + 4;
     int ty = dlg_screen_oy + fy + (fh - FONT_UI_HEIGHT) / 2;
-    gfx_text_ui(tx, ty, input_buf, COLOR_BLACK, COLOR_WHITE);
+    if (input_mask_mode && input_len > 0) {
+        char masked[128];
+        for (int i = 0; i < input_len && i < 127; i++)
+            masked[i] = '*';
+        masked[input_len] = '\0';
+        gfx_text_ui(tx, ty, masked, COLOR_BLACK, COLOR_WHITE);
+    } else {
+        gfx_text_ui(tx, ty, input_buf, COLOR_BLACK, COLOR_WHITE);
+    }
 
     /* Cursor — visible when text field is focused and blink is on */
     if (inp_field_focus && inp_cursor_visible) {
@@ -704,6 +714,10 @@ static bool input_dialog_event(hwnd_t hwnd, const window_event_t *event) {
     default:
         return false;
     }
+}
+
+void dialog_input_set_mask(bool mask) {
+    input_mask_mode = mask;
 }
 
 hwnd_t dialog_input_show(hwnd_t parent, const char *title,

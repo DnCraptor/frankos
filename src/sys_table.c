@@ -54,6 +54,7 @@
 #include "file_assoc.h"
 #include "desktop.h"
 #include "ico.h"
+#include "netcard.h"
 #include <math.h>
 
 #include "sys/fcntl.h"
@@ -726,6 +727,18 @@ unsigned long __in_systable() __aligned(4096) sys_table_ptrs[] = {
     // API v.39 — System reboot
     watchdog_reboot,          // 536
     system_reboot_to_firmware,// 537
+    // API v.40 — Network
+    netcard_wifi_connected,       // 538
+    netcard_wifi_ip,              // 539
+    netcard_socket_open,          // 540
+    netcard_socket_send,          // 541
+    netcard_socket_close,         // 542
+    netcard_set_data_callback,    // 543
+    netcard_set_close_callback,   // 544
+    netcard_wifi_join,            // 545
+    netcard_wifi_quit,            // 546
+    netcard_wifi_scan,            // 547
+    netcard_set_wifi_callback,    // 548
     // TODO:
     0
 };

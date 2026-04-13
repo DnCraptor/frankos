@@ -13,6 +13,7 @@
 #include "startmenu.h"
 #include "swap.h"
 #include "snd.h"
+#include "netcard.h"
 #include "gfx.h"
 #include "font.h"
 #include "display.h"
@@ -21,6 +22,15 @@
 #include <string.h>
 
 extern const uint8_t default_icon_16x16[256];
+
+/* Network tray icons (net_icons.c) */
+extern const uint8_t *net_icon16_noact_get(void);
+extern const uint8_t *net_icon16_tx_get(void);
+extern const uint8_t *net_icon16_rx_get(void);
+extern const uint8_t *net_icon16_tx_rx_get(void);
+
+/* Spawn Network Settings (main.c) */
+extern void spawn_network_settings(void);
 
 /*==========================================================================
  * Constants
@@ -31,18 +41,21 @@ extern const uint8_t default_icon_16x16[256];
 #define TASK_BUTTON_W    120   /* max width of per-window buttons */
 #define TASK_BUTTON_PAD    2   /* padding between task buttons */
 #define TASK_AREA_X       (TASKBAR_START_W + 6) /* where task buttons start */
+#define TASK_AREA_W       (tray_x() - TASK_AREA_X - 4)
 
-/* Notification area (system tray) — right side of taskbar */
-#define TRAY_WIDTH        64
-#define TRAY_X            ((int)display_width - TRAY_WIDTH - 2)
-#define TASK_AREA_W       (TRAY_X - TASK_AREA_X - 4)
+/* Notification area (system tray) — right side of taskbar.
+ * When connected:    [net_icon 16px][4px][vol_icon 16px][4px][clock 40px] = 84px
+ * When disconnected: [vol_icon 16px][4px][clock 40px]                    = 64px */
+#define TRAY_WIDTH_NET    84
+#define TRAY_WIDTH_NONET  64
 
-/* Speaker icon position inside tray */
-#define ICON_X            (TRAY_X + 4)
+/* Dynamic tray geometry based on WiFi connection state */
+static inline int tray_w(void)  { return netcard_wifi_connected() ? TRAY_WIDTH_NET : TRAY_WIDTH_NONET; }
+static inline int tray_x(void)  { return (int)display_width - tray_w() - 2; }
+static inline int net_icon_x(void) { return tray_x() + 4; }
+static inline int vol_icon_x(void) { return tray_x() + (netcard_wifi_connected() ? 24 : 4); }
+static inline int clock_x(void)    { return tray_x() + (netcard_wifi_connected() ? 44 : 24); }
 #define ICON_Y            (BUTTON_Y + 3)
-
-/* Clock text position inside tray (after icon) */
-#define CLOCK_X           (TRAY_X + 24)
 #define CLOCK_Y           (BUTTON_Y + (BUTTON_HEIGHT - FONT_UI_HEIGHT) / 2)
 
 /*==========================================================================
@@ -58,6 +71,9 @@ static uint32_t last_clock_minute = 0xFFFFFFFF;
 /* Volume popup state (defined here so taskbar_mouse_click can use them) */
 static bool vol_popup_open_flag = false;
 static bool vol_popup_dragging = false;
+
+/* Forward declaration for network tray popup */
+static void net_popup_open_at(int16_t x);
 
 /* Volume icon from ICO (parsed on first use in fn_icons.c) */
 extern const uint8_t *fn_icon16_volume_get(void);
@@ -182,7 +198,7 @@ void taskbar_draw(void) {
         if (!win || !(win->flags & WF_ALIVE)) continue;
         if (!(win->flags & WF_BORDER)) continue; /* skip borderless popups */
 
-        if (btn_x + btn_w > TRAY_X - 4) break; /* no room for more buttons */
+        if (btn_x + btn_w > tray_x() - 4) break; /* no room for more buttons */
 
         bool is_focused = (i == focus) && (win->flags & WF_VISIBLE);
 
@@ -213,11 +229,11 @@ void taskbar_draw(void) {
         btn_x += btn_w + TASK_BUTTON_PAD;
     }
 
-    /* ---- Notification area (sunken well with speaker icon + clock) ---- */
+    /* ---- Notification area (sunken well with icons + clock) ---- */
     {
-        int tx = TRAY_X;
+        int tx = tray_x();
         int ty = BUTTON_Y;
-        int tw = TRAY_WIDTH;
+        int tw = tray_w();
         int th = BUTTON_HEIGHT;
 
         /* Sunken well border */
@@ -227,8 +243,20 @@ void taskbar_draw(void) {
         gfx_hline(tx + 1, ty + th - 1, tw - 1, COLOR_WHITE);
         gfx_vline(tx + tw - 1, ty + 1, th - 1, COLOR_WHITE);
 
+        /* Network icon (only shown when WiFi is connected) */
+        if (netcard_wifi_connected()) {
+            const uint8_t *net_icon;
+            switch (netcard_get_icon_state()) {
+            case NET_ICON_TX:    net_icon = net_icon16_tx_get();    break;
+            case NET_ICON_RX:    net_icon = net_icon16_rx_get();    break;
+            case NET_ICON_TX_RX: net_icon = net_icon16_tx_rx_get(); break;
+            default:             net_icon = net_icon16_noact_get(); break;
+            }
+            gfx_draw_icon_16(net_icon_x(), ICON_Y, net_icon);
+        }
+
         /* Speaker icon */
-        gfx_draw_icon_16(ICON_X, ICON_Y, fn_icon16_volume_get());
+        gfx_draw_icon_16(vol_icon_x(), ICON_Y, fn_icon16_volume_get());
 
         /* Uptime clock: HH:MM */
         uint32_t ticks = xTaskGetTickCount();
@@ -245,7 +273,7 @@ void taskbar_draw(void) {
         clk[4] = '0' + minutes % 10;
         clk[5] = '\0';
 
-        gfx_text_ui(CLOCK_X, CLOCK_Y, clk, COLOR_BLACK, THEME_BUTTON_FACE);
+        gfx_text_ui(clock_x(), CLOCK_Y, clk, COLOR_BLACK, THEME_BUTTON_FACE);
     }
 }
 
@@ -259,8 +287,16 @@ bool taskbar_mouse_click(int16_t x, int16_t y) {
         return true;
     }
 
+    /* Network icon click — open Network Settings */
+    if (netcard_wifi_connected() &&
+        x >= net_icon_x() && x < net_icon_x() + 16 &&
+        y >= BUTTON_Y && y < BUTTON_Y + BUTTON_HEIGHT) {
+        spawn_network_settings();
+        return true;
+    }
+
     /* Volume icon in notification area — toggle popup */
-    if (x >= TRAY_X && x < TRAY_X + TRAY_WIDTH &&
+    if (x >= vol_icon_x() && x < vol_icon_x() + 20 &&
         y >= BUTTON_Y && y < BUTTON_Y + BUTTON_HEIGHT) {
         if (vol_popup_is_open())
             vol_popup_close();
@@ -269,6 +305,12 @@ bool taskbar_mouse_click(int16_t x, int16_t y) {
             vol_popup_dragging = false;
             wm_mark_dirty();
         }
+        return true;
+    }
+
+    /* Clock area — consume but ignore */
+    if (x >= tray_x() && x < tray_x() + tray_w() &&
+        y >= BUTTON_Y && y < BUTTON_Y + BUTTON_HEIGHT) {
         return true;
     }
 
@@ -338,6 +380,14 @@ void taskbar_popup_close(void) {
 
 bool taskbar_mouse_rclick(int16_t x, int16_t y) {
     if (y < TASKBAR_Y) return false;
+
+    /* Right-click on network icon: show network context menu */
+    if (netcard_wifi_connected() &&
+        x >= net_icon_x() && x < net_icon_x() + 16 &&
+        y >= BUTTON_Y && y < BUTTON_Y + BUTTON_HEIGHT) {
+        net_popup_open_at(x);
+        return true;
+    }
 
     int btn_x = TASK_AREA_X;
     int btn_w = taskbar_btn_width();
@@ -507,7 +557,7 @@ bool taskbar_popup_handle_key(uint8_t hid_code, uint8_t modifiers) {
 
 #define VP_WIDTH     58
 #define VP_HEIGHT   100
-#define VP_X        (TRAY_X + (TRAY_WIDTH - VP_WIDTH) / 2)
+#define VP_X        (tray_x() + (tray_w() - VP_WIDTH) / 2)
 #define VP_Y        (TASKBAR_Y - VP_HEIGHT - 2)
 
 /* Track geometry inside the popup */
@@ -682,6 +732,158 @@ bool vol_popup_mouse(uint8_t type, int16_t x, int16_t y) {
     if (type == WM_LBUTTONDOWN || type == WM_RBUTTONDOWN) {
         vol_popup_close();
         return false;
+    }
+    return false;
+}
+
+/*==========================================================================
+ * Network tray right-click context menu
+ *=========================================================================*/
+
+#define NET_POPUP_W       110
+#define NET_ITEM_HEIGHT    20
+#define NET_POPUP_ITEMS     2
+
+#define NET_ID_SETTINGS     1
+#define NET_ID_DISCONNECT   2
+
+static bool   net_popup_open_flag = false;
+static int8_t net_popup_hover = -1;
+static int16_t net_popup_x, net_popup_y;
+
+static void net_popup_open_at(int16_t x) {
+    int menu_h = 4 + NET_POPUP_ITEMS * NET_ITEM_HEIGHT;
+    net_popup_x = x - NET_POPUP_W / 2;
+    if (net_popup_x < 0) net_popup_x = 0;
+    if (net_popup_x + NET_POPUP_W > (int)display_width)
+        net_popup_x = display_width - NET_POPUP_W;
+    net_popup_y = TASKBAR_Y - menu_h;
+    net_popup_hover = 0;
+    net_popup_open_flag = true;
+    wm_mark_dirty();
+}
+
+bool net_popup_is_open(void) {
+    return net_popup_open_flag;
+}
+
+void net_popup_close(void) {
+    net_popup_open_flag = false;
+    net_popup_hover = -1;
+    wm_mark_dirty();
+}
+
+static void net_popup_execute(uint8_t id) {
+    net_popup_close();
+    switch (id) {
+    case NET_ID_SETTINGS:
+        spawn_network_settings();
+        break;
+    case NET_ID_DISCONNECT:
+        netcard_request_quit(NULL);
+        taskbar_invalidate();
+        break;
+    }
+}
+
+void net_popup_draw(void) {
+    if (!net_popup_open_flag) return;
+
+    static const char *labels[] = { "Settings", "Disconnect" };
+    static const uint8_t ids[] = { NET_ID_SETTINGS, NET_ID_DISCONNECT };
+    int menu_h = 4 + NET_POPUP_ITEMS * NET_ITEM_HEIGHT;
+
+    /* Shadow */
+    gfx_fill_rect_dithered(net_popup_x + 1, net_popup_y + 1,
+                           NET_POPUP_W, menu_h, COLOR_BLACK);
+
+    /* Background */
+    gfx_fill_rect(net_popup_x, net_popup_y, NET_POPUP_W, menu_h, THEME_BUTTON_FACE);
+
+    /* Border */
+    gfx_hline(net_popup_x, net_popup_y, NET_POPUP_W, COLOR_WHITE);
+    gfx_vline(net_popup_x, net_popup_y, menu_h, COLOR_WHITE);
+    gfx_hline(net_popup_x, net_popup_y + menu_h - 1, NET_POPUP_W, COLOR_BLACK);
+    gfx_vline(net_popup_x + NET_POPUP_W - 1, net_popup_y, menu_h, COLOR_BLACK);
+    gfx_hline(net_popup_x + 1, net_popup_y + menu_h - 2, NET_POPUP_W - 2, COLOR_DARK_GRAY);
+    gfx_vline(net_popup_x + NET_POPUP_W - 2, net_popup_y + 1, menu_h - 2, COLOR_DARK_GRAY);
+
+    /* Items */
+    int iy = net_popup_y + 2;
+    for (int i = 0; i < NET_POPUP_ITEMS; i++) {
+        bool hovered = (i == net_popup_hover);
+        uint8_t bg = hovered ? COLOR_BLUE : THEME_BUTTON_FACE;
+        uint8_t fg = hovered ? COLOR_WHITE : COLOR_BLACK;
+
+        gfx_fill_rect(net_popup_x + 2, iy, NET_POPUP_W - 4, NET_ITEM_HEIGHT, bg);
+        gfx_text_ui(net_popup_x + 6, iy + (NET_ITEM_HEIGHT - FONT_UI_HEIGHT) / 2,
+                    labels[i], fg, bg);
+        iy += NET_ITEM_HEIGHT;
+    }
+    (void)ids;
+}
+
+bool net_popup_mouse(uint8_t type, int16_t x, int16_t y) {
+    if (!net_popup_open_flag) return false;
+
+    int menu_h = 4 + NET_POPUP_ITEMS * NET_ITEM_HEIGHT;
+
+    if (x >= net_popup_x && x < net_popup_x + NET_POPUP_W &&
+        y >= net_popup_y && y < net_popup_y + menu_h) {
+        if (type == WM_MOUSEMOVE || type == WM_LBUTTONDOWN) {
+            int iy = net_popup_y + 2;
+            int new_hover = -1;
+            for (int i = 0; i < NET_POPUP_ITEMS; i++) {
+                if (y >= iy && y < iy + NET_ITEM_HEIGHT) {
+                    new_hover = i;
+                    break;
+                }
+                iy += NET_ITEM_HEIGHT;
+            }
+            if (new_hover != net_popup_hover) {
+                net_popup_hover = new_hover;
+                wm_mark_dirty();
+            }
+        }
+        if (type == WM_LBUTTONUP && net_popup_hover >= 0) {
+            uint8_t id = (net_popup_hover == 0) ? NET_ID_SETTINGS : NET_ID_DISCONNECT;
+            net_popup_execute(id);
+        }
+        return true;
+    }
+
+    /* Click outside — close */
+    if (type == WM_LBUTTONDOWN || type == WM_RBUTTONDOWN) {
+        net_popup_close();
+        return false;
+    }
+    return false;
+}
+
+bool net_popup_handle_key(uint8_t hid_code, uint8_t modifiers) {
+    if (!net_popup_open_flag) return false;
+    (void)modifiers;
+
+    switch (hid_code) {
+    case 0x52: /* UP */
+        net_popup_hover--;
+        if (net_popup_hover < 0) net_popup_hover = NET_POPUP_ITEMS - 1;
+        wm_mark_dirty();
+        return true;
+    case 0x51: /* DOWN */
+        net_popup_hover++;
+        if (net_popup_hover >= NET_POPUP_ITEMS) net_popup_hover = 0;
+        wm_mark_dirty();
+        return true;
+    case 0x28: /* ENTER */
+        if (net_popup_hover >= 0) {
+            uint8_t id = (net_popup_hover == 0) ? NET_ID_SETTINGS : NET_ID_DISCONNECT;
+            net_popup_execute(id);
+        }
+        return true;
+    case 0x29: /* ESC */
+        net_popup_close();
+        return true;
     }
     return false;
 }

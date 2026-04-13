@@ -81,4 +81,11 @@ static inline uint get_psram_pin(void) {
 #define I2S_DATA_PIN       9    /* I2S serial data */
 #define I2S_CLOCK_PIN_BASE 10   /* BCLK=10, LRCLK=11 */
 
+//=============================================================================
+// ESP-01 Netcard — PIO UART on GPIO 20/21 (swapped from HW UART1 mapping)
+//=============================================================================
+#define NETCARD_PIN_TX  21   /* our TX (to ESP RX) */
+#define NETCARD_PIN_RX  20   /* our RX (from ESP TX) */
+#define NETCARD_BAUD    115200
+
 #endif // BOARD_CONFIG_H

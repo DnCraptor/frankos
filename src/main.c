@@ -47,6 +47,10 @@
 #include "startup_sound.h"
 #include "settings.h"
 #include "control_panel.h"
+#include "network_settings.h"
+#include "serial.h"
+#include "netcard.h"
+#include "wifi_config.h"
 #ifdef PSRAM_MAX_FREQ_MHZ
 #include "psram_init.h"
 #endif
@@ -196,6 +200,7 @@ static volatile bool g_spawn_terminal_pending       = false;
 static volatile bool g_spawn_navigator_pending      = false;
 static volatile bool g_open_run_dialog_pending      = false;
 static volatile bool g_spawn_control_panel_pending  = false;
+static volatile bool g_spawn_network_settings_pending = false;
 
 /* Boot cursor state: cursor is hidden after the hourglass timeout until
  * the user first moves the mouse.  Non-static so wm_composite can skip
@@ -422,7 +427,8 @@ static void compositor_task(void *params) {
          * If the focused window is fullscreen, exit it first so the new
          * window/dialog appears over a normal desktop. */
         if (g_spawn_terminal_pending || g_spawn_navigator_pending ||
-            g_open_run_dialog_pending || g_spawn_control_panel_pending) {
+            g_open_run_dialog_pending || g_spawn_control_panel_pending ||
+            g_spawn_network_settings_pending) {
             hwnd_t fs_win = wm_get_focus();
             if (fs_win != HWND_NULL && wm_is_fullscreen(fs_win)) {
                 wm_toggle_fullscreen(fs_win);
@@ -446,6 +452,14 @@ static void compositor_task(void *params) {
             wm_set_pending_icon(cp_get_icon16());
             wm_set_pending_icon32(cp_get_icon32());
             control_panel_create();
+        }
+        if (g_spawn_network_settings_pending) {
+            g_spawn_network_settings_pending = false;
+            extern const uint8_t *net_icon16_connect_get(void);
+            extern const uint8_t *net_icon32_connect_get(void);
+            wm_set_pending_icon(net_icon16_connect_get());
+            wm_set_pending_icon32(net_icon32_connect_get());
+            network_settings_create();
         }
 
         /* Update clock in taskbar every minute (even without input) */
@@ -495,6 +509,11 @@ void spawn_terminal_window(void) {
  *=========================================================================*/
 void spawn_control_panel(void) {
     g_spawn_control_panel_pending = true;
+    g_video_dirty = true;
+}
+
+void spawn_network_settings(void) {
+    g_spawn_network_settings_pending = true;
     g_video_dirty = true;
 }
 
@@ -588,6 +607,11 @@ static void input_task(void *params) {
                 }
                 if (taskbar_popup_is_open() &&
                     taskbar_popup_handle_key(kev.hid_code, kev.modifiers)) {
+                    g_video_dirty = true;
+                    continue;
+                }
+                if (net_popup_is_open() &&
+                    net_popup_handle_key(kev.hid_code, kev.modifiers)) {
                     g_video_dirty = true;
                     continue;
                 }
@@ -916,6 +940,17 @@ int main(void) {
 
     /* Apply saved volume from settings */
     snd_set_volume(settings_get()->volume);
+
+    /* Initialize PIO UART for ESP-01 netcard (uses PIO1 SM1+SM2).
+     * MUST be after snd_init() because audio resets PIO1 entirely. */
+    printf("Initializing PIO UART for netcard...\n"); stdio_flush();
+    serial_init();
+
+    /* Load saved WiFi config from /fos/wifi.dat */
+    wifi_config_load();
+
+    /* Spawn netcard task — probes modem, auto-reconnects if config exists */
+    netcard_init_async();
 
     /* Install multicore lockout handler on Core 1 so flash_block() can
      * safely pause Core 1 during flash erase/program operations.

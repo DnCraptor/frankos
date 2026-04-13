@@ -54,6 +54,10 @@ hwnd_t dialog_input_show(hwnd_t parent, const char *title,
                          const char *prompt, const char *initial,
                          uint8_t max_len);
 
+/* Enable password masking for the next input dialog (asterisks).
+ * Call before dialog_input_show(). Resets after dialog closes. */
+void dialog_input_set_mask(bool mask);
+
 /* Get the text entered in the most recent input dialog.
  * Only valid after DLG_RESULT_INPUT is received. */
 const char *dialog_input_get_text(void);
