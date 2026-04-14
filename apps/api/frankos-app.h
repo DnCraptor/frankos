@@ -189,7 +189,7 @@ struct window {
 #define MIF_DISABLED     (1u << 1)
 
 typedef struct {
-    char     text[24];      /* UTF-8: up to ~11 Cyrillic chars + shortcut */
+    char     text[32];      /* UTF-8: up to ~15 Cyrillic chars + shortcut */
     uint16_t command_id;
     uint8_t  flags;
     uint8_t  accel_key;
