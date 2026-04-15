@@ -11,7 +11,7 @@
 #include "lang.h"
 
 /* App-local translations */
-enum { AL_GAME, AL_NEW, AL_BEGINNER, AL_INTERMEDIATE, AL_EXPERT, AL_ABOUT, AL_COUNT };
+enum { AL_GAME, AL_NEW, AL_BEGINNER, AL_INTERMEDIATE, AL_EXPERT, AL_ABOUT, AL_APP_NAME, AL_COUNT };
 static const char *al_en[] = {
     [AL_GAME]         = "Game",
     [AL_NEW]          = "New        F2",
@@ -19,14 +19,16 @@ static const char *al_en[] = {
     [AL_INTERMEDIATE] = "Intermediate",
     [AL_EXPERT]       = "Expert",
     [AL_ABOUT]        = "About Minesweeper",
+    [AL_APP_NAME]     = "Minesweeper",
 };
 static const char *al_ru[] = {
-    [AL_GAME]         = "\xD0\x98\xD0\xB3\xD1\x80\xD0\xB0",
-    [AL_NEW]          = "\xD0\x9D\xD0\xBE\xD0\xB2\xD0\xB0\xD1\x8F      F2",
-    [AL_BEGINNER]     = "\xD0\x9D\xD0\xBE\xD0\xB2\xD0\xB8\xD1\x87\xD0\xBE\xD0\xBA",
-    [AL_INTERMEDIATE] = "\xD0\x9B\xD1\x8E\xD0\xB1\xD0\xB8\xD1\x82\xD0\xB5\xD0\xBB\xD1\x8C",
-    [AL_EXPERT]       = "\xD0\xAD\xD0\xBA\xD1\x81\xD0\xBF\xD0\xB5\xD1\x80\xD1\x82",
-    [AL_ABOUT]        = "\xD0\x9E \xD0\xA1\xD0\xB0\xD0\xBF\xD1\x91\xD1\x80\xD0\xB5",
+    [AL_GAME]         = "Игра",
+    [AL_NEW]          = "Новая      F2",
+    [AL_BEGINNER]     = "Новичок",
+    [AL_INTERMEDIATE] = "Любитель",
+    [AL_EXPERT]       = "Эксперт",
+    [AL_ABOUT]        = "О Сапёре",
+    [AL_APP_NAME]     = "Сапёр",
 };
 static const char *AL(int id) { return lang_get() == LANG_RU ? al_ru[id] : al_en[id]; }
 
@@ -983,7 +985,7 @@ static hwnd_t minesweeper_create(void) {
     int16_t y = (DISPLAY_HEIGHT - TASKBAR_HEIGHT - fh) / 2;
     if (y < 0) y = 0;
 
-    hwnd_t hwnd = wm_create_window(x, y, fw, fh, "Minesweeper",
+    hwnd_t hwnd = wm_create_window(x, y, fw, fh, AL(AL_APP_NAME),
                                     WSTYLE_DIALOG | WF_MENUBAR,
                                     ms_event, ms_paint);
     if (hwnd == HWND_NULL) {

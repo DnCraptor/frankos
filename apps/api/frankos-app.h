@@ -196,7 +196,7 @@ typedef struct {
 } menu_item_t;
 
 typedef struct {
-    char        title[16];  /* UTF-8: up to ~7 Cyrillic chars */
+    char        title[24];  /* UTF-8: up to ~11 Cyrillic chars */
     uint8_t     accel_key;
     uint8_t     item_count;
     menu_item_t items[MENU_MAX_ITEMS];

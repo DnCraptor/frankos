@@ -14,18 +14,26 @@
 #include "lang.h"
 
 /* App-local translations */
-enum { AL_ABOUT, AL_NEW_MENU, AL_OPEN_MENU, AL_SAVE_MENU, AL_COUNT };
+enum { AL_ABOUT, AL_NEW_MENU, AL_OPEN_MENU, AL_SAVE_MENU, AL_FIND_MENU, AL_REPLACE_MENU, AL_UNTITLED, AL_APP_NAME, AL_COUNT };
 static const char *al_en[] = {
-    [AL_ABOUT]     = "About Notepad",
-    [AL_NEW_MENU]  = "New    Ctrl+N",
-    [AL_OPEN_MENU] = "Open.. Ctrl+O",
-    [AL_SAVE_MENU] = "Save   Ctrl+S",
+    [AL_ABOUT]        = "About Notepad",
+    [AL_NEW_MENU]     = "New    Ctrl+N",
+    [AL_OPEN_MENU]    = "Open.. Ctrl+O",
+    [AL_SAVE_MENU]    = "Save   Ctrl+S",
+    [AL_FIND_MENU]    = "Find.. Ctrl+F",
+    [AL_REPLACE_MENU] = "Replc  Ctrl+H",
+    [AL_UNTITLED]     = "Untitled",
+    [AL_APP_NAME]     = "Notepad",
 };
 static const char *al_ru[] = {
-    [AL_ABOUT]     = "\xD0\x9E \xD0\x91\xD0\xBB\xD0\xBE\xD0\xBA\xD0\xBD\xD0\xBE\xD1\x82\xD0\xB5",
-    [AL_NEW_MENU]  = "\xD0\x9D\xD0\xBE\xD0\xB2\xD1\x8B\xD0\xB9  Ctrl+N",
-    [AL_OPEN_MENU] = "\xD0\x9E\xD1\x82\xD0\xBA\xD1\x80\xD1\x8B\xD1\x82\xD1\x8C  Ctrl+O",
-    [AL_SAVE_MENU] = "\xD0\xA1\xD0\xBE\xD1\x85\xD1\x80\xD0\xB0\xD0\xBD\xD0\xB8\xD1\x82\xD1\x8C Ctrl+S",
+    [AL_ABOUT]        = "О Блокноте",
+    [AL_NEW_MENU]     = "Новый  Ctrl+N",
+    [AL_OPEN_MENU]    = "Открыть  Ctrl+O",
+    [AL_SAVE_MENU]    = "Сохранить Ctrl+S",
+    [AL_FIND_MENU]    = "Найти  Ctrl+F",
+    [AL_REPLACE_MENU] = "Замена Ctrl+H",
+    [AL_UNTITLED]     = "Без имени",
+    [AL_APP_NAME]     = "Блокнот",
 };
 static const char *AL(int id) { return lang_get() == LANG_RU ? al_ru[id] : al_en[id]; }
 
@@ -170,10 +178,10 @@ static void np_setup_menu(hwnd_t hwnd) {
     edit->items[3].command_id = CMD_SELECT_ALL;
     edit->items[3].accel_key = 0x04;
     edit->items[4].flags = MIF_SEPARATOR;
-    strncpy(edit->items[5].text, "Find.. Ctrl+F", sizeof(edit->items[5].text) - 1);
+    strncpy(edit->items[5].text, AL(AL_FIND_MENU), sizeof(edit->items[5].text) - 1);
     edit->items[5].command_id = CMD_FIND;
     edit->items[5].accel_key = 0x09;
-    strncpy(edit->items[6].text, "Replc  Ctrl+H", sizeof(edit->items[6].text) - 1);
+    strncpy(edit->items[6].text, AL(AL_REPLACE_MENU), sizeof(edit->items[6].text) - 1);
     edit->items[6].command_id = CMD_REPLACE;
     edit->items[6].accel_key = 0x0B;
 
@@ -250,7 +258,7 @@ static void np_update_title(void) {
     window_t *win = wm_get_window(np.hwnd);
     if (!win) return;
 
-    const char *name = "Untitled";
+    const char *name = AL(AL_UNTITLED);
     if (np.filepath[0]) {
         /* Find basename */
         const char *slash = np.filepath;
@@ -262,13 +270,19 @@ static void np_update_title(void) {
         name = slash;
     }
 
+    char suffix[16];
+    suffix[0] = ' '; suffix[1] = '-'; suffix[2] = ' ';
+    const char *an = AL(AL_APP_NAME);
+    int si = 3;
+    while (*an && si < 15) suffix[si++] = *an++;
+    suffix[si] = '\0';
+
     if (np.modified) {
         char title[24];
         int nlen = 0;
         const char *s = name;
         title[nlen++] = '*';
         while (*s && nlen < 18) title[nlen++] = *s++;
-        const char *suffix = " - Notepad";
         const char *q = suffix;
         while (*q && nlen < 23) title[nlen++] = *q++;
         title[nlen] = '\0';
@@ -278,7 +292,6 @@ static void np_update_title(void) {
         int nlen = 0;
         const char *s = name;
         while (*s && nlen < 18) title[nlen++] = *s++;
-        const char *suffix = " - Notepad";
         const char *q = suffix;
         while (*q && nlen < 23) title[nlen++] = *q++;
         title[nlen] = '\0';
@@ -1590,6 +1603,9 @@ int main(int argc, char **argv) {
     np.modified = false;
     np.pending_action = PENDING_NONE;
     np.syntax_mode = SYNTAX_PLAIN;
+
+    /* Set translated window title */
+    np_update_title();
 
     /* Start cursor blink timer */
     np.blink_timer = xTimerCreate("npblink", pdMS_TO_TICKS(500),

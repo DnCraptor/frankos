@@ -226,7 +226,7 @@ static void pb_setup_menu(void) {
     m->items[4].flags = MIF_SEPARATOR;
     strncpy(m->items[5].text, L(STR_FM_EXIT), sizeof(m->items[5].text) - 1); m->items[5].command_id = CMD_EXIT;
     m = &bar.menus[1]; strncpy(m->title, L(STR_EDIT), sizeof(m->title) - 1); m->accel_key = 0x08; m->item_count = 8;
-    strncpy(m->items[0].text, "Undo   Ctrl+Z", 19); m->items[0].command_id = CMD_UNDO; m->items[0].accel_key = 0x1D;
+    strncpy(m->items[0].text, AL(AL_UNDO), sizeof(m->items[0].text) - 1); m->items[0].command_id = CMD_UNDO; m->items[0].accel_key = 0x1D;
     if (!pb.has_undo) m->items[0].flags = MIF_DISABLED;
     m->items[1].flags = MIF_SEPARATOR;
     strncpy(m->items[2].text, L(STR_FM_CUT_MENU), sizeof(m->items[2].text) - 1); m->items[2].command_id = CMD_CUT; m->items[2].accel_key = 0x1B;
@@ -237,11 +237,11 @@ static void pb_setup_menu(void) {
     if (!pb.sel_buf) m->items[4].flags = MIF_DISABLED;
     strncpy(m->items[5].text, L(STR_FM_SELALL_MENU), sizeof(m->items[5].text) - 1); m->items[5].command_id = CMD_SELECT_ALL; m->items[5].accel_key = 0x04;
     m->items[6].flags = MIF_SEPARATOR;
-    strncpy(m->items[7].text, "Clear Image", 19); m->items[7].command_id = CMD_CLEAR;
+    strncpy(m->items[7].text, AL(AL_CLEAR), sizeof(m->items[7].text) - 1); m->items[7].command_id = CMD_CLEAR;
     m = &bar.menus[2]; strncpy(m->title, AL(AL_IMAGE), sizeof(m->title) - 1); m->accel_key = 0x0C; m->item_count = 3;
-    strncpy(m->items[0].text, "Flip Horiz.", 19); m->items[0].command_id = CMD_FLIP_H;
-    strncpy(m->items[1].text, "Flip Vert.", 19); m->items[1].command_id = CMD_FLIP_V;
-    strncpy(m->items[2].text, "Invert Colors", 19); m->items[2].command_id = CMD_INVERT;
+    strncpy(m->items[0].text, AL(AL_FLIP_H), sizeof(m->items[0].text) - 1); m->items[0].command_id = CMD_FLIP_H;
+    strncpy(m->items[1].text, AL(AL_FLIP_V), sizeof(m->items[1].text) - 1); m->items[1].command_id = CMD_FLIP_V;
+    strncpy(m->items[2].text, AL(AL_INVERT), sizeof(m->items[2].text) - 1); m->items[2].command_id = CMD_INVERT;
     m = &bar.menus[3]; strncpy(m->title, L(STR_HELP), sizeof(m->title) - 1); m->accel_key = 0x0B; m->item_count = 1;
     strncpy(m->items[0].text, L(STR_FM_ABOUT_MENU), sizeof(m->items[0].text) - 1); m->items[0].command_id = CMD_ABOUT; m->items[0].accel_key = 0x3A;
     menu_set(pb.hwnd, &bar);

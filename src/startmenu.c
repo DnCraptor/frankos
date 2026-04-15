@@ -82,7 +82,7 @@ static sm_item_t sm_items[] = {
  *=========================================================================*/
 
 #define FOS_MAX_APPS 16
-#define FOS_NAME_LEN 20
+#define FOS_NAME_LEN 32   /* UTF-8: up to ~15 Cyrillic chars */
 #define FOS_PATH_LEN 32
 #define ICON16_SIZE  256
 
@@ -123,16 +123,43 @@ static void fos_scan(void) {
         fos_apps[fos_app_count].has_icon = false;
         if (f_open(&f, inf_path, FA_READ) == FR_OK) {
             UINT br;
-            char buf[FOS_NAME_LEN];
-            if (f_read(&f, buf, FOS_NAME_LEN - 1, &br) == FR_OK && br > 0) {
+            static char buf[96]; /* static to avoid stack overflow */
+            if (f_read(&f, buf, sizeof(buf) - 1, &br) == FR_OK && br > 0) {
                 buf[br] = '\0';
-                /* Trim at first newline */
+                /* Line 1 = default (English) name.
+                 * Subsequent lines: name.XX=Localized Name
+                 * where XX is the language code (ru, de, fr, etc.) */
+                char *line1 = buf;
                 char *nl = strchr(buf, '\n');
-                if (nl) *nl = '\0';
-                nl = strchr(buf, '\r');
-                if (nl) *nl = '\0';
-                if (buf[0]) {
-                    strncpy(fos_apps[fos_app_count].name, buf, FOS_NAME_LEN - 1);
+                if (nl) {
+                    *nl = '\0';
+                    if (nl > buf && *(nl - 1) == '\r') *(nl - 1) = '\0';
+                }
+                /* Look for name.XX= matching current language */
+                const char *lang_codes[] = { "en", "ru" };
+                uint8_t lang = lang_get();
+                const char *chosen = line1;
+                if (lang < sizeof(lang_codes)/sizeof(lang_codes[0]) && lang > 0 && nl) {
+                    char prefix[12];
+                    snprintf(prefix, sizeof(prefix), "name.%s=", lang_codes[lang]);
+                    int plen = strlen(prefix);
+                    char *p = nl + 1;
+                    while (*p) {
+                        char *eol = strchr(p, '\n');
+                        if (eol) *eol = '\0';
+                        /* Trim CR */
+                        char *cr = strchr(p, '\r');
+                        if (cr) *cr = '\0';
+                        if (strncmp(p, prefix, plen) == 0 && p[plen]) {
+                            chosen = p + plen;
+                            break;
+                        }
+                        if (!eol) break;
+                        p = eol + 1;
+                    }
+                }
+                if (chosen[0]) {
+                    strncpy(fos_apps[fos_app_count].name, chosen, FOS_NAME_LEN - 1);
                     fos_apps[fos_app_count].name[FOS_NAME_LEN - 1] = '\0';
                     got_name = true;
                 }

@@ -35,7 +35,7 @@ typedef struct {
 } menu_item_t;
 
 typedef struct {
-    char        title[16];   /* top-level menu title (UTF-8, ~7 Cyrillic) */
+    char        title[24];   /* top-level menu title (UTF-8, ~11 Cyrillic) */
     uint8_t     accel_key;   /* HID code for Alt+letter (0=none) */
     uint8_t     item_count;
     menu_item_t items[MENU_MAX_ITEMS];

@@ -11,9 +11,9 @@
 #include "lang.h"
 
 /* App-local translations */
-enum { AL_ABOUT, AL_COUNT };
-static const char *al_en[] = { [AL_ABOUT] = "About Calculator" };
-static const char *al_ru[] = { [AL_ABOUT] = "\xD0\x9E \xD0\x9A\xD0\xB0\xD0\xBB\xD1\x8C\xD0\xBA\xD1\x83\xD0\xBB\xD1\x8F\xD1\x82\xD0\xBE\xD1\x80\xD0\xB5" };
+enum { AL_ABOUT, AL_APP_NAME, AL_COUNT };
+static const char *al_en[] = { [AL_ABOUT] = "About Calculator", [AL_APP_NAME] = "Calculator" };
+static const char *al_ru[] = { [AL_ABOUT] = "О Калькуляторе", [AL_APP_NAME] = "Калькулятор" };
 static const char *AL(int id) { return lang_get() == LANG_RU ? al_ru[id] : al_en[id]; }
 
 #define dbg_printf(...) ((int(*)(const char*, ...))_sys_table_ptrs[438])(__VA_ARGS__)
@@ -521,7 +521,7 @@ static hwnd_t calc_create(void) {
     int16_t y = (DISPLAY_HEIGHT - TASKBAR_HEIGHT - fh) / 2;
     if (y < 0) y = 0;
 
-    hwnd_t hwnd = wm_create_window(x, y, fw, fh, "Calculator",
+    hwnd_t hwnd = wm_create_window(x, y, fw, fh, AL(AL_APP_NAME),
                                     WSTYLE_DIALOG | WF_MENUBAR,
                                     calc_event, calc_paint);
     if (hwnd == HWND_NULL) {

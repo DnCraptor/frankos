@@ -20,9 +20,17 @@
 #include "lang.h"
 
 /* App-local translations */
-enum { AL_ABOUT, AL_COUNT };
-static const char *al_en[] = { [AL_ABOUT] = "About ZX Spectrum" };
-static const char *al_ru[] = { [AL_ABOUT] = "\xD0\x9E ZX Spectrum" };
+enum { AL_ABOUT, AL_LOAD_TAP, AL_RESET, AL_COUNT };
+static const char *al_en[] = {
+    [AL_ABOUT]    = "About ZX Spectrum",
+    [AL_LOAD_TAP] = "Load TAP..Ctrl+O",
+    [AL_RESET]    = "Reset",
+};
+static const char *al_ru[] = {
+    [AL_ABOUT]    = "О ZX Spectrum",
+    [AL_LOAD_TAP] = "Загрузить..Ctrl+O",
+    [AL_RESET]    = "Сброс",
+};
 static const char *AL(int id) { return lang_get() == LANG_RU ? al_ru[id] : al_en[id]; }
 
 /*
@@ -615,16 +623,16 @@ static void setup_menu(hwnd_t hwnd) {
     file->accel_key = 0x09; /* HID 'F' — underlines F, enables Alt+F */
     file->item_count = 4;
 
-    strncpy(file->items[0].text, "Load TAP..Ctrl+O", 19);
+    strncpy(file->items[0].text, AL(AL_LOAD_TAP), sizeof(file->items[0].text) - 1);
     file->items[0].command_id = CMD_LOAD_TAP;
     file->items[0].accel_key = 0x12;
 
-    strncpy(file->items[1].text, "Reset", 19);
+    strncpy(file->items[1].text, AL(AL_RESET), sizeof(file->items[1].text) - 1);
     file->items[1].command_id = CMD_RESET;
 
     file->items[2].flags = MIF_SEPARATOR;
 
-    strncpy(file->items[3].text, L(STR_FM_EXIT), 19);
+    strncpy(file->items[3].text, L(STR_FM_EXIT), sizeof(file->items[3].text) - 1);
     file->items[3].command_id = CMD_EXIT;
 
     /* Help menu */
@@ -632,7 +640,7 @@ static void setup_menu(hwnd_t hwnd) {
     strncpy(help->title, L(STR_HELP), sizeof(help->title) - 1);
     help->accel_key = 0x0B; /* HID 'H' */
     help->item_count = 1;
-    strncpy(help->items[0].text, L(STR_FM_ABOUT_MENU), 19);
+    strncpy(help->items[0].text, L(STR_FM_ABOUT_MENU), sizeof(help->items[0].text) - 1);
     help->items[0].command_id = CMD_ABOUT;
     help->items[0].accel_key = 0x3A;
 

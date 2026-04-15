@@ -11,7 +11,7 @@
 #include "lang.h"
 
 /* App-local translations */
-enum { AL_NEW_GAME, AL_DRAW_ONE, AL_DRAW_THREE, AL_CONGRATS, AL_CONGRATS_MSG, AL_ABOUT, AL_GAME, AL_COUNT };
+enum { AL_NEW_GAME, AL_DRAW_ONE, AL_DRAW_THREE, AL_CONGRATS, AL_CONGRATS_MSG, AL_ABOUT, AL_GAME, AL_APP_NAME, AL_COUNT };
 static const char *al_en[] = {
     [AL_NEW_GAME]    = "New Game   F2",
     [AL_DRAW_ONE]    = "Draw One",
@@ -20,15 +20,17 @@ static const char *al_en[] = {
     [AL_CONGRATS_MSG]= "You won!",
     [AL_ABOUT]       = "About Solitaire",
     [AL_GAME]        = "Game",
+    [AL_APP_NAME]    = "Solitaire",
 };
 static const char *al_ru[] = {
-    [AL_NEW_GAME]    = "\xD0\x9D\xD0\xBE\xD0\xB2\xD0\xB0\xD1\x8F \xD0\xB8\xD0\xB3\xD1\x80\xD0\xB0 F2",
-    [AL_DRAW_ONE]    = "\xD0\x9F\xD0\xBE \xD0\xBE\xD0\xB4\xD0\xBD\xD0\xBE\xD0\xB9",
-    [AL_DRAW_THREE]  = "\xD0\x9F\xD0\xBE \xD1\x82\xD1\x80\xD0\xB8",
-    [AL_CONGRATS]    = "\xD0\x9F\xD0\xBE\xD0\xB7\xD0\xB4\xD1\x80\xD0\xB0\xD0\xB2\xD0\xBB\xD1\x8F\xD0\xB5\xD0\xBC!",
-    [AL_CONGRATS_MSG]= "\xD0\x92\xD1\x8B \xD0\xB2\xD1\x8B\xD0\xB8\xD0\xB3\xD1\x80\xD0\xB0\xD0\xBB\xD0\xB8!",
-    [AL_ABOUT]       = "\xD0\x9E \xD0\x9F\xD0\xB0\xD1\x81\xD1\x8C\xD1\x8F\xD0\xBD\xD1\x81\xD0\xB5",
-    [AL_GAME]        = "\xD0\x98\xD0\xB3\xD1\x80\xD0\xB0",
+    [AL_NEW_GAME]    = "Новая игра F2",
+    [AL_DRAW_ONE]    = "По одной",
+    [AL_DRAW_THREE]  = "По три",
+    [AL_CONGRATS]    = "Поздравляем!",
+    [AL_CONGRATS_MSG]= "Вы выиграли!",
+    [AL_ABOUT]       = "О Косынке",
+    [AL_GAME]        = "Игра",
+    [AL_APP_NAME]    = "Косынка",
 };
 static const char *AL(int id) { return lang_get() == LANG_RU ? al_ru[id] : al_en[id]; }
 
@@ -1600,7 +1602,7 @@ static hwnd_t solitaire_create(void) {
     if (y < 0) y = 0;
 
     /* Icon is set by the launcher (Start Menu / file manager) from .ico file */
-    hwnd_t hwnd = wm_create_window(x, y, fw, fh, "Solitaire",
+    hwnd_t hwnd = wm_create_window(x, y, fw, fh, AL(AL_APP_NAME),
                                     WSTYLE_DIALOG | WF_MENUBAR,
                                     sol_event, sol_paint);
     if (hwnd == HWND_NULL) {

@@ -960,7 +960,7 @@ static void main_paint(hwnd_t hwnd) {
     }
 
     /* Open button (standard Win95 button) */
-    wd_button(228, BTN_Y, 50, BTN_H, L(STR_APP_OPEN), false, false);
+    wd_button(218, BTN_Y, 50, BTN_H, L(STR_APP_OPEN), false, false);
 
     /* ---- Toggles + Volume row (y=96, h=14) ---- */
     draw_3d_button(4, TOGGLE_Y, 34, TOGGLE_H, fa->shuffle);
