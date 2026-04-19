@@ -5,9 +5,10 @@
 #include <stdint.h>
 
 // fake (for compartimility)
-#define DISPHSTX_FORMAT_4_PAL 1
-#define DISPHSTX_FORMAT_8_PAL 2
 void DispHstxCore1Exec(void (*fnc)());
 void DispHstxCore1Wait();
+
+void vga_init(void);
+
 
 #endif // UNI_VGA_DISP

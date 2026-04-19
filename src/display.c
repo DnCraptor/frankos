@@ -18,7 +18,7 @@
 #include <stdio.h>
 
 // Windows 95 16-color palette (RGB888)
-static const uint32_t default_palette_rgb888[16] = {
+const uint32_t default_palette_rgb888[16] = {
     0x000000, // 0  Black
     0x000080, // 1  Blue (navy)
     0x008000, // 2  Green
@@ -37,11 +37,13 @@ static const uint32_t default_palette_rgb888[16] = {
     0xFFFFFF, // 15 White
 };
 
+#if HSTX
 // CGA palette in RGB565 format for DispHSTX (16-color mode)
 static uint16_t cga_palette_rgb565[16];
 
 // 256-color palette in RGB565 format for DispHSTX (320x240x256 mode)
 static uint16_t palette_256_rgb565[256];
+#endif
 
 // Framebuffer — large enough for the biggest mode:
 // 640x480x4bpp = 153,600 bytes; 320x240x8bpp = 76,800 bytes
@@ -71,6 +73,7 @@ uint8_t  display_bpp        = 4;
 uint8_t  display_video_mode = VIDEO_MODE_640x480x16;
 volatile uint8_t display_compositor_idle = 0;
 
+#if HSTX
 // Convert RGB888 to RGB565
 static inline uint16_t rgb888_to_rgb565(uint32_t rgb888) {
     uint8_t r = (rgb888 >> 16) & 0xFF;
@@ -104,6 +107,7 @@ static void init_default_256_palette(void) {
         palette_256_rgb565[idx++] = rgb888_to_rgb565(rgb);
     }
 }
+#endif
 
 /* ======================================================================
  * Internal: configure and start a video mode via DispHSTX
@@ -186,14 +190,6 @@ void display_init(void) {
     memset(framebuffer_a, 0, sizeof(framebuffer_a));
     display_draw_buffer_ptr = draw_buffer;
 
-    // Convert CGA palette to RGB565
-    for (int i = 0; i < 16; i++) {
-        cga_palette_rgb565[i] = rgb888_to_rgb565(default_palette_rgb888[i]);
-    }
-
-    // Initialize default 256-color palette
-    init_default_256_palette();
-
     // Set runtime state for default mode
     display_width      = DISPLAY_WIDTH;
     display_height     = DISPLAY_HEIGHT;
@@ -201,9 +197,16 @@ void display_init(void) {
     display_bpp        = 4;
     display_video_mode = VIDEO_MODE_640x480x16;
 
+#if HSTX
+    // Convert CGA palette to RGB565
+    for (int i = 0; i < 16; i++) {
+        cga_palette_rgb565[i] = rgb888_to_rgb565(default_palette_rgb888[i]);
+    }
+
+    // Initialize default 256-color palette
+    init_default_256_palette();
     start_mode_640x480x16();
 
-#if HSTX
     /* Pre-initialize the 320x240x256 vmode descriptor so that
      * display_set_video_mode can hot-swap without DVI restart. */
     {
@@ -226,7 +229,7 @@ void display_init(void) {
         }
     }
 #else
-// TODO:
+    vga_init();
 #endif
 }
 
@@ -288,7 +291,11 @@ do_switch:
         display_fb_stride  = 320;
         display_bpp        = 4;
         display_video_mode = VIDEO_MODE_640x480x16;
+#if HSTX
         reconfigure_vmode_inplace(1, 1, DISPHSTX_FORMAT_4_PAL, cga_palette_rgb565);
+#else
+        // TODO:
+#endif
         return 0;
 
     case VIDEO_MODE_320x240x256:
@@ -297,7 +304,11 @@ do_switch:
         display_fb_stride  = 320;
         display_bpp        = 8;
         display_video_mode = VIDEO_MODE_320x240x256;
+#if HSTX
         reconfigure_vmode_inplace(2, 2, DISPHSTX_FORMAT_8_PAL, palette_256_rgb565);
+#else
+        // TODO:
+#endif
         return 0;
 
     default:
@@ -310,7 +321,11 @@ uint8_t display_get_video_mode(void) {
 }
 
 void display_set_palette_entry(uint8_t index, uint32_t rgb888) {
+#if HSTX
     palette_256_rgb565[index] = rgb888_to_rgb565(rgb888);
+#else
+    // TODO:
+#endif
 }
 
 // Set pixel in the draw buffer — mode-aware
