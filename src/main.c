@@ -38,7 +38,6 @@
 #include "filemanager.h"
 #include "cursor.h"
 #include "font.h"
-#include "disphstx.h"
 #include "psram.h"
 #include "swap.h"
 #include "alttab.h"

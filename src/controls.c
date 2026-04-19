@@ -1422,14 +1422,14 @@ void radiogroup_init(radiogroup_t *rg, int16_t x, int16_t y,
 }
 
 void radiogroup_set_labels(radiogroup_t *rg, const char **labels) {
-    for (uint8_t i = 0; i < rg->count; i++) {
+    for (uint8_t i = 0; i < rg->count && i < sizeof(rg->labels) / sizeof(rg->labels[0]); i++) {
         strncpy(rg->labels[i], labels[i], sizeof(rg->labels[0]) - 1);
         rg->labels[i][sizeof(rg->labels[0]) - 1] = '\0';
     }
 }
 
 void radiogroup_paint(radiogroup_t *rg) {
-    for (uint8_t i = 0; i < rg->count; i++) {
+    for (uint8_t i = 0; i < rg->count && i < sizeof(rg->labels) / sizeof(rg->labels[0]); i++) {
         int16_t ry = rg->y + i * rg->spacing;
         int16_t rx = rg->x;
         bool sel = (rg->selected == i);

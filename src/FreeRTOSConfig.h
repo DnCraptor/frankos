@@ -30,6 +30,9 @@
 #if DISPHSTX_USE_VGA
 #define configTOTAL_HEAP_SIZE                   ((size_t)(120 * 1024))
 #endif
+#ifndef configTOTAL_HEAP_SIZE
+#define configTOTAL_HEAP_SIZE                   ((size_t)(135 * 1024))
+#endif
 #define configAPPLICATION_ALLOCATED_HEAP        0
 
 /* CPU */

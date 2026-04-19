@@ -15,6 +15,8 @@ endif()
 
 cmake_minimum_required(VERSION 3.13)
 
+set (HSTX ON)
+
 set(PICO_BOARD frank_m2)
 set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards)
 set(PICO_PLATFORM rp2350-arm-s)
@@ -35,7 +37,9 @@ pico_sdk_init()
 set(FREERTOS_CONFIG_FILE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/src CACHE STRING "")
 
 # DispHSTX display driver (DVI via HSTX peripheral)
-add_subdirectory(lib/DispHSTX DispHSTX)
+if (HSTX)
+    add_subdirectory(lib/DispHSTX DispHSTX)
+endif()
 
 # Unified PS/2 driver (keyboard + mouse)
 add_subdirectory(drivers/ps2)
@@ -170,7 +174,9 @@ if(FLASH_SPEED)
 endif()
 
 # Force-include our DispHSTX config so the library sees it before its own _config.h
-target_compile_options(frankos PRIVATE -include ${CMAKE_CURRENT_LIST_DIR}/src/config.h)
+if (HSTX)
+    target_compile_options(frankos PRIVATE -include ${CMAKE_CURRENT_LIST_DIR}/src/config.h)
+endif()
 
 # MOS2 code uses int↔ptr casts extensively; relax these warnings
 target_compile_options(frankos PRIVATE
@@ -206,8 +212,12 @@ target_compile_definitions(frankos PRIVATE
     I2S_SOUND=1
 )
 
+if (HSTX)
+    target_link_libraries(frankos DispHSTX)
+    target_compile_definitions(frankos PRIVATE HSTX=1)
+endif()
+
 target_link_libraries(frankos
-    DispHSTX
     ps2_driver
     sdcard
     helix

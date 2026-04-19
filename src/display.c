@@ -7,7 +7,9 @@
  */
 
 #include "display.h"
+#if HSTX
 #include "disphstx.h"
+#endif
 #include "FreeRTOS.h"
 #include "portable.h"
 #include <string.h>
@@ -34,10 +36,10 @@ static const uint32_t default_palette_rgb888[16] = {
 };
 
 // CGA palette in RGB565 format for DispHSTX (16-color mode)
-static u16 cga_palette_rgb565[16];
+static uint16_t cga_palette_rgb565[16];
 
 // 256-color palette in RGB565 format for DispHSTX (320x240x256 mode)
-static u16 palette_256_rgb565[256];
+static uint16_t palette_256_rgb565[256];
 
 // Framebuffer — large enough for the biggest mode:
 // 640x480x4bpp = 153,600 bytes; 320x240x8bpp = 76,800 bytes
@@ -64,11 +66,11 @@ uint8_t  display_video_mode = VIDEO_MODE_640x480x16;
 volatile uint8_t display_compositor_idle = 0;
 
 // Convert RGB888 to RGB565
-static inline u16 rgb888_to_rgb565(uint32_t rgb888) {
+static inline uint16_t rgb888_to_rgb565(uint32_t rgb888) {
     uint8_t r = (rgb888 >> 16) & 0xFF;
     uint8_t g = (rgb888 >> 8) & 0xFF;
     uint8_t b = rgb888 & 0xFF;
-    return (u16)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3));
+    return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3));
 }
 
 /* Initialize the default 256-color VGA palette.
@@ -219,7 +221,7 @@ void display_request_mode(uint8_t mode) {
 /* Reconfigure the ACTIVE vmode descriptor in-place during vblank.
  * DVI keeps running — no DispHstxAllTerm, no restart, HDMI link stays up. */
 static void reconfigure_vmode_inplace(int hdbl, int vdbl, int format,
-                                       const u16 *pal) {
+                                       const uint16_t *pal) {
     sDispHstxVModeState *v = &DispHstxVMode;
 
     /* Clear framebuffer first (while old mode still displays) */
