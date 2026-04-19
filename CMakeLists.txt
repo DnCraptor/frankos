@@ -15,7 +15,7 @@ endif()
 
 cmake_minimum_required(VERSION 3.13)
 
-set (HSTX ON)
+set (HSTX OFF)
 
 set(PICO_BOARD frank_m2)
 set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards)
@@ -39,6 +39,8 @@ set(FREERTOS_CONFIG_FILE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/src CACHE STRING ""
 # DispHSTX display driver (DVI via HSTX peripheral)
 if (HSTX)
     add_subdirectory(lib/DispHSTX DispHSTX)
+else()
+    add_subdirectory(drivers/vga)
 endif()
 
 # Unified PS/2 driver (keyboard + mouse)
@@ -215,6 +217,8 @@ target_compile_definitions(frankos PRIVATE
 if (HSTX)
     target_link_libraries(frankos DispHSTX)
     target_compile_definitions(frankos PRIVATE HSTX=1)
+else()
+    target_link_libraries(frankos vga)
 endif()
 
 target_link_libraries(frankos

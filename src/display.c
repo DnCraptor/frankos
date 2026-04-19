@@ -9,6 +9,8 @@
 #include "display.h"
 #if HSTX
 #include "disphstx.h"
+#else
+#include "uni_vga_disph.h"
 #endif
 #include "FreeRTOS.h"
 #include "portable.h"
@@ -49,7 +51,11 @@ static alignas(4) uint8_t framebuffer_a[FB_STRIDE * FB_HEIGHT];
 /* Pre-initialized vmode descriptor for 320x240x256 hot-swap.
  * Heap-allocated (4.7KB) at display_init time so we can swap
  * pDispHstxVMode without stopping/restarting DVI. */
+#if HSTX
 static sDispHstxVModeState *vmode_320x240 = NULL;
+#else
+static volatile uint16_t visible_line_number = 0;
+#endif
 
 static uint8_t *draw_buffer = framebuffer_a;
 uint8_t *display_show_buffer_ptr = framebuffer_a;
@@ -104,6 +110,7 @@ static void init_default_256_palette(void) {
  * ====================================================================== */
 
 static void start_mode_640x480x16(void) {
+#if HSTX
     sDispHstxVModeState *vmode = &DispHstxVMode;
     DispHstxVModeInitTime(vmode, &DispHstxVModeTimeList[vmodetime_640x480_fast]);
 
@@ -131,9 +138,13 @@ static void start_mode_640x480x16(void) {
 #else
     DispHstxSelDispMode(DISPHSTX_DISPMODE_VGA, vmode);
 #endif
+#else
+// TODO:
+#endif
 }
 
 static void start_mode_320x240x256(void) {
+#if HSTX
     sDispHstxVModeState *vmode = &DispHstxVMode;
     DispHstxVModeInitTime(vmode, &DispHstxVModeTimeList[vmodetime_640x480_fast]);
 
@@ -162,6 +173,9 @@ static void start_mode_320x240x256(void) {
 #else
     DispHstxSelDispMode(DISPHSTX_DISPMODE_VGA, vmode);
 #endif
+#else
+// TODO:
+#endif
 }
 
 /* ======================================================================
@@ -189,6 +203,7 @@ void display_init(void) {
 
     start_mode_640x480x16();
 
+#if HSTX
     /* Pre-initialize the 320x240x256 vmode descriptor so that
      * display_set_video_mode can hot-swap without DVI restart. */
     {
@@ -210,6 +225,9 @@ void display_init(void) {
 #endif
         }
     }
+#else
+// TODO:
+#endif
 }
 
 /* Set the video_mode flag without actually switching hardware.
@@ -222,6 +240,7 @@ void display_request_mode(uint8_t mode) {
  * DVI keeps running — no DispHstxAllTerm, no restart, HDMI link stays up. */
 static void reconfigure_vmode_inplace(int hdbl, int vdbl, int format,
                                        const uint16_t *pal) {
+#if HSTX
     sDispHstxVModeState *v = &DispHstxVMode;
 
     /* Clear framebuffer first (while old mode still displays) */
@@ -246,6 +265,9 @@ static void reconfigure_vmode_inplace(int hdbl, int vdbl, int format,
 #endif
 
     restore_interrupts(saved);
+#else
+// TODO:
+#endif
 }
 
 int display_set_video_mode(uint8_t mode) {
@@ -266,8 +288,7 @@ do_switch:
         display_fb_stride  = 320;
         display_bpp        = 4;
         display_video_mode = VIDEO_MODE_640x480x16;
-        reconfigure_vmode_inplace(1, 1, DISPHSTX_FORMAT_4_PAL,
-                                   cga_palette_rgb565);
+        reconfigure_vmode_inplace(1, 1, DISPHSTX_FORMAT_4_PAL, cga_palette_rgb565);
         return 0;
 
     case VIDEO_MODE_320x240x256:
@@ -276,8 +297,7 @@ do_switch:
         display_fb_stride  = 320;
         display_bpp        = 8;
         display_video_mode = VIDEO_MODE_320x240x256;
-        reconfigure_vmode_inplace(2, 2, DISPHSTX_FORMAT_8_PAL,
-                                   palette_256_rgb565);
+        reconfigure_vmode_inplace(2, 2, DISPHSTX_FORMAT_8_PAL, palette_256_rgb565);
         return 0;
 
     default:
@@ -325,15 +345,28 @@ void display_swap_buffers(void) {
 }
 
 void display_wait_vsync(void) {
+#if HSTX
     DispHstxWaitVSync();
+#else
+// TODO:
+    display_wait_scanline(0); // temporatu W/A
+#endif
 }
 
 uint16_t display_get_scanline(void) {
+#if HSTX
     return pDispHstxVMode->line;
+#else
+    return visible_line_number;
+#endif
 }
 
 void display_wait_scanline(int16_t y) {
+#if HSTX
     while ((int16_t)pDispHstxVMode->line <= y)
+#else
+    while ((int16_t)visible_line_number <= y)
+#endif
         __dmb();
 }
 

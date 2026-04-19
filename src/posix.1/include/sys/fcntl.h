@@ -26,13 +26,18 @@ typedef unsigned int mode_t;
 #define O_RDWR      0x0002  /* open for reading and writing */
 
 /* File creation and status flags */
-#define O_CREAT     0x0040  /* create file if it does not exist */
-#define O_EXCL      0x0080  /* error if O_CREAT and the file exists */
-#define O_TRUNC     0x0200  /* truncate file to zero length */
-#define O_APPEND    0x0400  /* append on each write */
-#define O_NONBLOCK  0x0800  /* non-blocking mode */
-#define O_SYNC      0x1000  /* write according to synchronized I/O file integrity completion */
-#define O_NOFOLLOW  0x2000  /* do not follow symbolic links */
+#ifndef O_CREAT
+#define O_CREAT        0100  /* create file if it does not exist */
+#define O_EXCL         0200  /* error if O_CREAT and the file exists */
+#define O_NOCTTY       0400
+#define O_TRUNC       01000  /* truncate file to zero length */
+#define O_APPEND      02000  /* append on each write */
+#define O_NONBLOCK    04000   /* non-blocking mode */
+#define O_DSYNC      010000
+#define O_SYNC     04010000  /* write according to synchronized I/O file integrity completion */
+#define O_RSYNC    04010000
+#define O_NOFOLLOW  0100000  /* do not follow symbolic links */
+#endif
 
 /* defined by POSIX Issue 7 */
 #define	O_CLOEXEC	0x10000		/* atomically set FD_CLOEXEC */
@@ -48,13 +53,18 @@ typedef unsigned int mode_t;
 #define F_SETFD         2   /* Set file descriptor flags */
 #define F_GETFL         3   /* Get file status flags */
 #define F_SETFL         4   /* Set file status flags */
-#define F_GETLK         5   /* Get record locking information */
-#define F_SETLK         6   /* Set record locking information (non-blocking) */
-#define F_SETLKW        7   /* Set record locking information (blocking) */
-#define F_GETOWN        8   /* Get owner (for SIGIO) */
-#define F_SETOWN        9   /* Set owner (for SIGIO) */
-#define F_GETSIG        10  /* Get signal for async notification */
-#define F_SETSIG        11  /* Set signal for async notification */
+#ifndef F_SETOWN
+#define F_SETOWN 8   /* Set owner (for SIGIO) */
+#define F_GETOWN 9   /* Get owner (for SIGIO) */
+#define F_SETSIG 10  /* Set signal for async notification */
+#define F_GETSIG 11  /* Get signal for async notification */
+#endif
+#ifndef F_GETLK
+#define F_GETLK 12   /* Get record locking information */
+#define F_SETLK 13   /* Set record locking information (non-blocking) */
+#define F_SETLKW 14  /* Set record locking information (blocking) */
+#endif
+
 #define F_SETLEASE      1024 /* Set file lease (Linux-specific) */
 #define F_GETLEASE      1025 /* Get file lease */
 #define F_NOTIFY        1026 /* Subscribe to filesystem events (Linux-specific) */

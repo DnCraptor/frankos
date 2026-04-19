@@ -8,6 +8,7 @@
 #include "sys_table.h"
 
 #include <pico/time.h>
+#include <string.h>
 
 int __libc() __clock_gettime(clockid_t clk, struct timespec *ts32)
 {

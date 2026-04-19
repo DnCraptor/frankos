@@ -11,6 +11,8 @@
 void* pvPortMalloc(size_t sz); // 32
 void vPortFree(void*); // 33
 
+#undef free
+#undef malloc
 #define malloc(sz) pvPortMalloc(sz)
 #define free(p) vPortFree(p)
 

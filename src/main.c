@@ -53,6 +53,11 @@
 #ifdef PSRAM_MAX_FREQ_MHZ
 #include "psram_init.h"
 #endif
+#if HSTX
+#include "disphstx.h"
+#else
+#include "uni_vga_disph.h"
+#endif
 
 /*==========================================================================
  * UF2 Over-Mode Boot Support
