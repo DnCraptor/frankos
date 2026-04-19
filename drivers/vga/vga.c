@@ -1,5 +1,7 @@
 #pragma GCC optimize("Ofast")
 
+#include <string.h>
+
 #include <pico.h>
 #include <pico/sync.h>
 #include <pico/multicore.h>
@@ -9,7 +11,7 @@
 #include <hardware/clocks.h>
 
 #define PIO_VGA (pio0)
-#define beginVGA_PIN (6)
+#define beginVGA_PIN (12) // TODO: M1/M2
 #define VGA_DMA_IRQ (DMA_IRQ_0)
 #define palette16_mask 0xc0c0
 
@@ -17,10 +19,19 @@
 #define TMPL_HS             0x80
 #define TMPL_VS             0x40
 #define TMPL_VHS            0x00
+#define N_lines_total       525
+#define N_lines_visible     480
+#define line_size           800
+#define HS_SHIFT            328 * 2
+#define visible_line_size   320 // ? *2 ?
+#define line_VS_begin       490
+#define line_VS_end         491
+#define shift_picture (line_size - HS_SHIFT)
 
 static int _SM_VGA = -1;
 static int dma_chan_ctrl;
 static int dma_chan;
+static uint16_t screen_line = 0;
 
 static semaphore_t vga_start_semaphore;
 volatile static void (*_fnc)();
@@ -43,13 +54,38 @@ const static uint8_t conv1[] = { 0b00, 0b01, 0b01, 0b01, 0b10, 0b11, 0b11, 0b11 
 static uint32_t bg_color[2];
 static uint16_t __scratch_y("vga_driver") palette[16*4];
 
+static uint32_t lines_pattern_data[line_size];
+static uint32_t* lines_pattern[4];
+
 void vga_dma_channel_set_read_addr(const volatile void* addr) {
     dma_channel_set_read_addr(dma_chan, addr, false);
 }
 
 inline static uint8_t* __time_critical_func(dma_handler_VGA_impl)() {
     extern uint8_t  display_video_mode; // VIDEO_MODE_640x480x16;
+    extern uint8_t* display_show_buffer_ptr;
+    screen_line++;
+    uint8_t* input_buffer = display_show_buffer_ptr;
+    if (screen_line == N_lines_total) {
+        screen_line = 0;
+    }
 
+  //  if (screen_line >= N_lines_visible) {
+        // заполнение цветом фона
+        if ((screen_line == N_lines_visible) | (screen_line == (N_lines_visible + 3))) {
+            uint32_t* output_buffer_32bit = lines_pattern[2 + ((screen_line) & 1)];
+            output_buffer_32bit += shift_picture / 4;
+            uint32_t color32 = bg_color[0];
+            for (int i = visible_line_size / 2; i--;) {
+                *output_buffer_32bit++ = color32;
+            }
+        }
+
+        // синхросигналы
+        if ((screen_line >= line_VS_begin) && (screen_line <= line_VS_end))
+            return &lines_pattern[1]; // VS SYNC
+        return &lines_pattern[0];
+  //  }
 }
 
 static void __time_critical_func(dma_handler_VGA)() {
@@ -92,11 +128,11 @@ static void init_palette() {
     }
 }
 
-void set_vga_clkdiv(uint32_t pixel_clock, uint32_t line_size) {
+void set_vga_clkdiv(uint32_t pixel_clock, uint32_t _line_size) {
     double fdiv = clock_get_hz(clk_sys) / (pixel_clock * 1.0); // частота пиксельклока
     uint32_t div32 = (uint32_t)(fdiv * (1 << 16) + 0.0);
     PIO_VGA->sm[_SM_VGA].clkdiv = div32 & 0xfffff000; //делитель для конкретной sm
-    dma_channel_set_trans_count(dma_chan, line_size >> 2, false);
+    dma_channel_set_trans_count(dma_chan, _line_size >> 2, false);
 }
 
 #define VIDEO_MODE_640x480x16   0   /* Desktop: 640x480, 4bpp, 16 colors  */
@@ -109,16 +145,30 @@ bool vga_set_mode(uint8_t mode) {
 
     double fdiv = 100;
     int HS_SIZE = 48 * 2;
-    int HS_SHIFT = 328 * 2;
     uint8_t TMPL_LINE8 = 0b11000000;
-    int line_size = 400 * 2;
-    int shift_picture = line_size - HS_SHIFT;
-    int visible_line_size = 320;
-    int N_lines_total = 525;
-    int N_lines_visible = 480;
-    int line_VS_begin = 490;
-    int line_VS_end = 491;
     set_vga_clkdiv(25175000, line_size);
+
+    for (int i = 0; i < 4; i++) {
+        lines_pattern[i] = &lines_pattern_data[i * (line_size >> 2)];
+    }
+    TMPL_VHS8 = TMPL_LINE8 ^ 0b11000000;
+    TMPL_VS8 = TMPL_LINE8 ^ 0b10000000;
+    TMPL_HS8 = TMPL_LINE8 ^ 0b01000000;
+    uint8_t* base_ptr = (uint8_t *)lines_pattern[0];
+    // пустая строка
+    memset(base_ptr, TMPL_LINE8, line_size);
+    // выровненная синхра вначале
+    memset(base_ptr, TMPL_HS8, HS_SIZE);
+    // кадровая синхра
+    base_ptr = (uint8_t *)lines_pattern[1];
+    memset(base_ptr, TMPL_VS8, line_size);
+    // выровненная синхра вначале
+    memset(base_ptr, TMPL_VHS8, HS_SIZE);
+    // заготовки для строк с изображением
+    base_ptr = (uint8_t *)lines_pattern[2];
+    memcpy(base_ptr, lines_pattern[0], line_size);
+    base_ptr = (uint8_t *)lines_pattern[3];
+    memcpy(base_ptr, lines_pattern[0], line_size);
 }
 
 void vga_init(void) {
