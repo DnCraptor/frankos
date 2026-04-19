@@ -920,7 +920,11 @@ int main(void) {
     printf("\n== FRANK OS ==\n");
     printf("CPU: %lu MHz\n", (unsigned long)(clock_get_hz(clk_sys) / 1000000));
     printf("Scheduler: FreeRTOS\n");
+#if DISPHSTX_USE_DVI
     printf("Display: DispHSTX DVI\n");
+#else
+    printf("Display: DispHSTX VGA\n");
+#endif
     stdio_flush();
 
     printf("Initializing display...\n"); stdio_flush();

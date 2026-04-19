@@ -124,8 +124,11 @@ static void start_mode_640x480x16(void) {
     if (err != DISPHSTX_ERR_OK) {
         printf("DispHSTX 640x480 slot error: %d\n", err);
     }
-
+#if DISPHSTX_USE_DVI
     DispHstxSelDispMode(DISPHSTX_DISPMODE_DVI, vmode);
+#else
+    DispHstxSelDispMode(DISPHSTX_DISPMODE_VGA, vmode);
+#endif
 }
 
 static void start_mode_320x240x256(void) {
@@ -152,7 +155,11 @@ static void start_mode_320x240x256(void) {
         printf("DispHSTX 320x240 slot error: %d\n", err);
     }
 
+#if DISPHSTX_USE_DVI
     DispHstxSelDispMode(DISPHSTX_DISPMODE_DVI, vmode);
+#else
+    DispHstxSelDispMode(DISPHSTX_DISPMODE_VGA, vmode);
+#endif
 }
 
 /* ======================================================================
@@ -194,7 +201,11 @@ void display_init(void) {
                 -1,
                 palette_256_rgb565,
                 NULL, NULL, -1, 0, 0);
+#if DISPHSTX_USE_DVI
             DispHstxDviPrepare(vm);
+#else
+            DispHstxVgaPrepare(vm);
+#endif
         }
     }
 }
@@ -226,7 +237,11 @@ static void reconfigure_vmode_inplace(int hdbl, int vdbl, int format,
     DispHstxVModeAddSlot(v, hdbl, vdbl, -1, format,
                           display_show_buffer_ptr, -1,
                           pal, NULL, NULL, -1, 0, 0);
+#if DISPHSTX_USE_DVI
     DispHstxDviPrepare(v);
+#else
+    DispHstxVgaPrepare(v);
+#endif
 
     restore_interrupts(saved);
 }

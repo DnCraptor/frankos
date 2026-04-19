@@ -24,7 +24,12 @@
 /* Memory */
 #define configSUPPORT_DYNAMIC_ALLOCATION        1
 #define configSUPPORT_STATIC_ALLOCATION         1
+#if DISPHSTX_USE_DVI
 #define configTOTAL_HEAP_SIZE                   ((size_t)(135 * 1024))
+#endif
+#if DISPHSTX_USE_VGA
+#define configTOTAL_HEAP_SIZE                   ((size_t)(120 * 1024))
+#endif
 #define configAPPLICATION_ALLOCATED_HEAP        0
 
 /* CPU */
