@@ -6,6 +6,7 @@
 #include <hardware/pio.h>
 #include <hardware/dma.h>
 #include <hardware/irq.h>
+#include <hardware/clocks.h>
 
 #define PIO_VGA (pio0)
 #define beginVGA_PIN (6)
@@ -42,7 +43,13 @@ const static uint8_t conv1[] = { 0b00, 0b01, 0b01, 0b01, 0b10, 0b11, 0b11, 0b11 
 static uint32_t bg_color[2];
 static uint16_t __scratch_y("vga_driver") palette[16*4];
 
+void vga_dma_channel_set_read_addr(const volatile void* addr) {
+    dma_channel_set_read_addr(dma_chan, addr, false);
+}
+
 inline static uint8_t* __time_critical_func(dma_handler_VGA_impl)() {
+    extern uint8_t  display_video_mode; // VIDEO_MODE_640x480x16;
+
 }
 
 static void __time_critical_func(dma_handler_VGA)() {
@@ -83,6 +90,35 @@ static void init_palette() {
     for (int i = 0; i < 64; i++) {
         palette[i] = (palette[i] & 0x3f3f) | palette16_mask;
     }
+}
+
+void set_vga_clkdiv(uint32_t pixel_clock, uint32_t line_size) {
+    double fdiv = clock_get_hz(clk_sys) / (pixel_clock * 1.0); // частота пиксельклока
+    uint32_t div32 = (uint32_t)(fdiv * (1 << 16) + 0.0);
+    PIO_VGA->sm[_SM_VGA].clkdiv = div32 & 0xfffff000; //делитель для конкретной sm
+    dma_channel_set_trans_count(dma_chan, line_size >> 2, false);
+}
+
+#define VIDEO_MODE_640x480x16   0   /* Desktop: 640x480, 4bpp, 16 colors  */
+#define VIDEO_MODE_320x240x256  1   /* Fullscreen: 320x240, 8bpp, 256 colors */
+
+bool vga_set_mode(uint8_t mode) {
+    uint8_t TMPL_VHS8 = 0;
+    uint8_t TMPL_VS8 = 0;
+    uint8_t TMPL_HS8 = 0;
+
+    double fdiv = 100;
+    int HS_SIZE = 48 * 2;
+    int HS_SHIFT = 328 * 2;
+    uint8_t TMPL_LINE8 = 0b11000000;
+    int line_size = 400 * 2;
+    int shift_picture = line_size - HS_SHIFT;
+    int visible_line_size = 320;
+    int N_lines_total = 525;
+    int N_lines_visible = 480;
+    int line_VS_begin = 490;
+    int line_VS_end = 491;
+    set_vga_clkdiv(25175000, line_size);
 }
 
 void vga_init(void) {
@@ -147,6 +183,7 @@ void vga_init(void) {
 
     vga_set_bgcolor(0x000000);
     init_palette();
+    vga_set_mode(VIDEO_MODE_640x480x16);
 }
 
 
@@ -166,3 +203,4 @@ void DispHstxCore1Exec(void (*fnc)()) {
 void DispHstxCore1Wait() {
     sem_release(&vga_start_semaphore);
 }
+

@@ -143,7 +143,7 @@ static void start_mode_640x480x16(void) {
     DispHstxSelDispMode(DISPHSTX_DISPMODE_VGA, vmode);
 #endif
 #else
-// TODO:
+    vga_set_mode(VIDEO_MODE_640x480x16);
 #endif
 }
 
@@ -178,7 +178,7 @@ static void start_mode_320x240x256(void) {
     DispHstxSelDispMode(DISPHSTX_DISPMODE_VGA, vmode);
 #endif
 #else
-// TODO:
+    display_set_video_mode(VIDEO_MODE_320x240x256);
 #endif
 }
 
@@ -294,7 +294,7 @@ do_switch:
 #if HSTX
         reconfigure_vmode_inplace(1, 1, DISPHSTX_FORMAT_4_PAL, cga_palette_rgb565);
 #else
-        // TODO:
+        vga_set_mode(VIDEO_MODE_640x480x16);
 #endif
         return 0;
 
@@ -307,7 +307,7 @@ do_switch:
 #if HSTX
         reconfigure_vmode_inplace(2, 2, DISPHSTX_FORMAT_8_PAL, palette_256_rgb565);
 #else
-        // TODO:
+        vga_set_mode(VIDEO_MODE_320x240x256);
 #endif
         return 0;
 

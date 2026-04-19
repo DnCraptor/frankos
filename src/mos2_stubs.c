@@ -448,8 +448,10 @@ bool graphics_set_font(uint8_t w, uint8_t h) { (void)w; (void)h; return false; }
 bool graphics_set_ext_font(uint8_t *table, uint8_t w, uint8_t h) { (void)table; (void)w; (void)h; return false; }
 
 void set_vga_dma_handler_impl(dma_handler_impl_fn impl) { (void)impl; }
+#if HSTX
 void set_vga_clkdiv(uint32_t pixel_clock, uint32_t line_size) { (void)pixel_clock; (void)line_size; }
 void vga_dma_channel_set_read_addr(const volatile void *addr) { (void)addr; }
+#endif
 
 /*==========================================================================
  * PSRAM — memory-mapped access via QSPI CS1 (uncached window 0x15000000)
