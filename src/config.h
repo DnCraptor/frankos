@@ -35,7 +35,6 @@
 #define DISPHSTX_DVI_PINOUT 2       // order CLK-..D2+
 
 // Disable unused formats to save RAM
-#define DISPHSTX_VGA_LINEBUF            1 // минимум буферов строк для VGA
 #define DISPHSTX_USE_FORMAT_1           0
 #define DISPHSTX_USE_FORMAT_2           0
 #define DISPHSTX_USE_FORMAT_3           0
